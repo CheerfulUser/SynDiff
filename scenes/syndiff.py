@@ -289,11 +289,17 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 			#print(template.shape)
 			offset1 = int(0.5 * tpf.shape[1])
 			offset2 = int(0.5 * tpf.shape[2])
-			template[int(row[i] + offset1),int(col[i] + offset2)] = tcounts[i]
-			template = signal.fftconvolve(template, kernal, mode='same')
+			if FFT:
+				template[int(row[i] + offset1),int(col[i] + offset2)] = tcounts[i]
+				template = signal.fftconvolve(template, kernal, mode='same')
+			else:
+				optics = kernal * tcounts[i]
+				r = int(row[i] + offset1)
+				c = int(col[i] + offset2)
+				template = Add_convolved_sources(r,c,optics,template)
 			template = template[offset1:int(3*offset1),offset2-1:int(3*offset2-1)]
 		
-			sources[i] = template
+			sources[i] += template
 	if Plot:
 		gaia = np.nansum(sources,axis=0)
 		#gaia = rotate(np.flipud(gaia*10),-90)
@@ -333,61 +339,71 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 	return sources
 
 def Add_convolved_sources(Row, Col, Optics,Template):
-	"""
-	An ugly function that inserts a small array into a larger array.
-	With this fft is not needed for single objects.
-	
-	-------
-	Inputs-
-	-------
-	Row 		int  	Row of source
-	Col 		int  	Column of source
-	Optics 		array 	Small array to inject
-	Template 	array 	Large array to be get injected 
+    """
+    An ugly function that inserts a small array into a larger array.
+    With this fft is not needed for single objects.
 
-	-------
-	Output-
-	-------
-	Template 	array 	Large array with small array injected 
+    -------
+    Inputs-
+    -------
+    Row 		int  	Row of source
+    Col 		int  	Column of source
+    Optics 		array 	Small array to inject
+    Template 	array 	Large array to be get injected 
 
-	"""
-	start1 = int(Row - Optics.shape[0]/2)
-	end1 = int(Row + Optics.shape[0]/2)
-	
-	if start1 < 0:
-		o_start1 = abs(start1)
-		start1 = 0
-	else:
-		o_start1 = 0
+    -------
+    Output-
+    -------
+    Template 	array 	Large array with small array injected 
 
-	if end1 > Template.shape[0]:
-		o_end1 = Optics.shape[0]-abs(end1 - (Template.shape[0]))
-		end1 = Template.shape[0]
-	else:
-		o_end1 = Optics.shape[0]
+    """
+    if Optics.shape[0]/2 == int(Optics.shape[0]/2):
+        start1 = int(Row - Optics.shape[0]/2)
+        end1 = int(Row + Optics.shape[0]/2)
+    else:
+        start1 = int(Row - (Optics.shape[0]-1)/2 -1)
+        end1 = int(Row + (Optics.shape[0]-1)/2)
 
-	start2 = int(Col - Optics.shape[1]/2)
-	end2 = int(Col + Optics.shape[1]/2)
+    if start1 < 0:
+        o_start1 = abs(start1)
+        start1 = 0
+    else:
+        o_start1 = 0
 
-	if start2 < 0:
-		o_start2 = abs(start2)
-		start2 = 0
-	else:
-		o_start2 = 0
+    if end1 > Template.shape[0]:
+        o_end1 = Optics.shape[0]-abs(end1 - (Template.shape[0]))
+        end1 = Template.shape[0]
+    else:
+        o_end1 = Optics.shape[0]
+    if Optics.shape[0]/2 == int(Optics.shape[0]/2):
+        start2 = int(Col - Optics.shape[1]/2)
+        end2 = int(Col + Optics.shape[1]/2)
+    else:
+        start2 = int(Col - (Optics.shape[1]-1)/2 -1)
+        end2 = int(Col + (Optics.shape[1]-1)/2)
 
-	if end2 > Template.shape[1]:
-		o_end2 = Optics.shape[1]-abs(end2 - (Template.shape[1]))
-		end2 = Template.shape[1]
-	else:
-		o_end2 = Optics.shape[1]
-		
-	#print(o_start1,o_end1)
-	#print(o_start2,o_end2)
-	#print(template[start1:end1,start2:end2].shape)
-	#print('optics', optics[o_start1:o_end1,o_start2:o_end2].shape)
-	Template[start1:end1,start2:end2] = Optics[o_start1:o_end1,o_start2:o_end2]
-	
-	return Template
+    if start2 < 0:
+        print('s2',start2)
+        o_start2 = abs(start2)
+        start2 = 0
+    else:
+        o_start2 = 0
+
+    if end2 > Template.shape[1]:
+        print('e2')
+        o_end2 = Optics.shape[1]-abs(end2 - (Template.shape[1]))
+        end2 = Template.shape[1]
+    else:
+        o_end2 = Optics.shape[1]
+
+    #print(o_start1,o_end1)
+    #print(start2,end2)
+    #print(o_start2,o_end2)
+    #print(Template[start1:end1,start2:end2].shape)
+    #print('optics', Optics[o_start1:o_end1,o_start2:o_end2].shape)
+    Template[start1:end1,start2:end2] = Optics[o_start1:o_end1,o_start2:o_end2]
+
+    return Template
 
 
 def Print_snapshot():
