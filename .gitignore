@@ -28,6 +28,8 @@
 *.sql
 *.sqlite
 *checkpoints.ipynb
+*~
+__pycache__
 
 # OS generated files #
 ######################
