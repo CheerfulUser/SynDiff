@@ -1,0 +1,54 @@
+File "/Users/ryanr/anaconda3/lib/python3.5/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/Users/ryanr/anaconda3/lib/python3.5/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/__main__.py", line 3, in <module>
+    app.launch_new_instance()
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/traitlets/config/application.py", line 658, in launch_instance
+    app.start()
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/kernelapp.py", line 486, in start
+    self.io_loop.start()
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/tornado/platform/asyncio.py", line 127, in start
+    self.asyncio_loop.run_forever()
+  File "/Users/ryanr/anaconda3/lib/python3.5/asyncio/base_events.py", line 421, in run_forever
+    self._run_once()
+  File "/Users/ryanr/anaconda3/lib/python3.5/asyncio/base_events.py", line 1425, in _run_once
+    handle._run()
+  File "/Users/ryanr/anaconda3/lib/python3.5/asyncio/events.py", line 127, in _run
+    self._callback(*self._args)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/tornado/ioloop.py", line 759, in _run_callback
+    ret = callback()
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/tornado/stack_context.py", line 276, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/zmq/eventloop/zmqstream.py", line 536, in <lambda>
+    self.io_loop.add_callback(lambda : self._handle_events(self.socket, 0))
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/zmq/eventloop/zmqstream.py", line 450, in _handle_events
+    self._handle_recv()
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/zmq/eventloop/zmqstream.py", line 480, in _handle_recv
+    self._run_callback(callback, msg)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/zmq/eventloop/zmqstream.py", line 432, in _run_callback
+    callback(*args, **kwargs)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/tornado/stack_context.py", line 276, in null_wrapper
+    return fn(*args, **kwargs)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 283, in dispatcher
+    return self.dispatch_shell(stream, msg)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 233, in dispatch_shell
+    handler(stream, idents, msg)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/kernelbase.py", line 399, in execute_request
+    user_expressions, allow_stdin)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/ipkernel.py", line 208, in do_execute
+    res = shell.run_cell(code, store_history=store_history, silent=silent)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/ipykernel/zmqshell.py", line 537, in run_cell
+    return super(ZMQInteractiveShell, self).run_cell(*args, **kwargs)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 2662, in run_cell
+    raw_cell, store_history, silent, shell_futures)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 2785, in _run_cell
+    interactivity=interactivity, compiler=compiler, result=result)
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 2909, in run_ast_nodes
+    if self.run_code(code, result):
+  File "/Users/ryanr/anaconda3/lib/python3.5/site-packages/IPython/core/interactiveshell.py", line 2963, in run_code
+    exec(code_obj, self.user_global_ns, self.user_ns)
+  File "<ipython-input-2-c614891a1895>", line 3, in <module>
+    obj.getPrfAtColRow(123.0, 456.0, 1,1,1)
+  File "./dave/diffimg/tessprf.py", line 99, in getPrfAtColRow
+    traceback.print_stack()
