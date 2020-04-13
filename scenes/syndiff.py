@@ -259,7 +259,7 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 	tcounts = 10**(-2/5*(Tmag - Zeropoint))
 	bkg = 10**(-2/5*(Bkg_limit - Zeropoint))
 
-	sources = np.zeros((len(pos),tpf.shape[1],tpf.shape[2])) + bkg
+	sources = np.zeros((len(pos),tpf.shape[1],tpf.shape[2])) #+ bkg
 	for i in range(len(pos)):
 		if Interpolate:
 			template = np.zeros((2*tpf.shape[1]*Scale,2*tpf.shape[2]*Scale))
@@ -311,7 +311,7 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 		im = plt.imshow(gaia,origin='lower', norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
-		plt.plot(pos[:,0],pos[:,1],'r.')
+		#plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
 		ax = plt.gca()
 		divider = make_axes_locatable(ax)
 		cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -326,15 +326,16 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 		im = plt.imshow(tess,origin='lower',norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
-		plt.plot(pos[:,0],pos[:,1],'r.')
+		#plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
 		ax = plt.gca()
 		divider = make_axes_locatable(ax)
 		cax = divider.append_axes("right", size="5%", pad=0.05)
 		plt.colorbar(im, cax=cax)
 
 		plt.tight_layout()
-		#if type(Save) != type(None):
-		#	plt.savefig(Save)
+		plt.show()
+		if type(Save) != type(None):
+			plt.savefig(Save)
 
 	return sources
 
@@ -383,14 +384,14 @@ def Add_convolved_sources(Row, Col, Optics,Template):
         end2 = int(Col + (Optics.shape[1]-1)/2)
 
     if start2 < 0:
-        print('s2',start2)
+        #print('s2',start2)
         o_start2 = abs(start2)
         start2 = 0
     else:
         o_start2 = 0
 
     if end2 > Template.shape[1]:
-        print('e2')
+        #print('e2')
         o_end2 = Optics.shape[1]-abs(end2 - (Template.shape[1]))
         end2 = Template.shape[1]
     else:
