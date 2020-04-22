@@ -13,6 +13,6 @@ To-do:
 5) Optimise the fitting 
 6) Make PS image scenes faster (rotate to match TESS PA)
 7) Get conversion from PS mags to TESS counts 
-8) Create background models 
+~~8) Create background models ~~
 9) Do subtraction
 
