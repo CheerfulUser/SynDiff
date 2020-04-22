@@ -30,6 +30,8 @@ from scipy.ndimage.filters import convolve
 from scipy.interpolate import RectBivariateSpline
 from scipy import signal
 
+from skimage.measure import block_reduce
+
 import tracemalloc
 
 from scipy.ndimage import  rotate
@@ -84,7 +86,7 @@ def Interp_PRF(Row,Col,Camera,CCD, Scale, Method = 'RBS'):
 	pathToMatFile = PACKAGEDIR + '/data/prf/'
 	obj = prf.TessPrf(pathToMatFile)
 	PRF = obj.getPrfAtColRow(Col, Row, 1,Camera,CCD)
-	PRF = rotate(PRF,-90)
+	PRF = np.flipud(rotate(PRF,-90))
 	norm = np.nansum(PRF)
 	x2 = np.arange(0,PRF.shape[0]-1, 1/Scale)
 	y2 = np.arange(0,PRF.shape[1]-1, 1/Scale)
@@ -170,7 +172,7 @@ def Get_TESS_local(Path, Sector, Camera, CCD, Time = None):
 		raise FileExistsError("TESS file does not exist: '{}'".format(File))
 		pass
 
-def Get_Gaia(tpf, magnitude_limit = 18):
+def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 	"""
 	Get the coordinates and gia mag of all Gaia sources in the field of view.
 
@@ -212,16 +214,16 @@ def Get_Gaia(tpf, magnitude_limit = 18):
 	coords = tpf.wcs.all_world2pix(radecs, 0) ## TODO, is origin supposed to be zero or one?
 	Gmag = result['Gmag'].values
 	#Jmag = result['Jmag']
-	ind = (((coords[:,0] >= -0.5*tpf.shape[1]) & (coords[:,1] >= -0.5*tpf.shape[2])) & 
-		   ((coords[:,0] < 1.5*tpf.shape[1]) & (coords[:,1] < 1.5*tpf.shape[2])))
+	ind = (((coords[:,0] >= -10) & (coords[:,1] >= -10)) & 
+		   ((coords[:,0] < (tpf.shape[1] + 10)) & (coords[:,1] < (tpf.shape[2] + 10))))
 	coords = coords[ind]
 	Gmag = Gmag[ind]
 	#Jmag = Jmag[ind]
 	return coords, Gmag
 
-def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44, 
-				Scale = 100,Interpolate = False, FFT = False,Plot= False, 
-				Save = None):
+def Gaia_scene(Ra,Dec,Size,Maglim= 19,Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
+				Scale = 100,Interpolate = False, FFT = False,PRF=True,
+				Plot= False, Save = None):
 	"""
 	Create a simulated TESS image using Gaia sources. 
 
@@ -249,11 +251,11 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 		soures 			array 	Array of simulated TESS images for each Gaia sourcetes
 
 	"""
-	tpf = Get_TESS(Ra,Dec,Size)
+	tpf = Get_TESS(Ra,Dec,Size,Sector = Sector)
 	# pos returned as column row 
 	pos, gmag = Get_Gaia(tpf,magnitude_limit=Maglim)
-	col = pos[:,0]
-	row = pos[:,1]
+	col = pos[:,0]+.5
+	row = pos[:,1]+.5
 	
 	Tmag = gmag - 0.5
 	tcounts = 10**(-2/5*(Tmag - Zeropoint))
@@ -262,10 +264,10 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 	sources = np.zeros((len(pos),tpf.shape[1],tpf.shape[2])) #+ bkg
 	for i in range(len(pos)):
 		if Interpolate:
-			template = np.zeros((2*tpf.shape[1]*Scale,2*tpf.shape[2]*Scale))
+			template = np.zeros(((tpf.shape[1]+20)*Scale,(tpf.shape[2]+20)*Scale))
 			#print('template shape ',template.shape)
-			offset1 = int(0.5 * tpf.shape[1] * Scale)
-			offset2 = int(0.5 * tpf.shape[2] * Scale)
+			offset1 = int(10 * Scale)
+			offset2 = int(10 * Scale)
 			#print(np.nansum(template))
 			kernal = Interp_PRF(row[i] + tpf.row, col[i] + tpf.column,tpf.camera,tpf.ccd,Scale)
 			#print(np.nansum(kernal))
@@ -278,26 +280,31 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 				c = int(col[i]*Scale + offset2)
 				template = Add_convolved_sources(r,c,optics,template)
 			#print(np.nansum(template))
-			template = template[offset1:int(3*offset1),offset2:int(3*offset2)]
+			template = template[offset1:int(offset1 + tpf.shape[1]*Scale),offset2:int(offset2 +tpf.shape[2]*Scale)]
 			#print('template shape ',template.shape)
-			sources[i] = Downsample(template,Scale)
+			#print(np.nansum(template))
+			sources[i] = block_reduce(template,block_size=(Scale,Scale),func=np.nansum) #Downsample(template,Scale)
 
 		else:
-			template = np.zeros((2*tpf.shape[1],2*tpf.shape[2]))
-			kernal = Get_PRF(row[i] + tpf.row, col[i] + tpf.column,tpf.camera,tpf.ccd)
-			kernal = kernal / np.nansum(kernal)
-			#print(template.shape)
-			offset1 = int(0.5 * tpf.shape[1])
-			offset2 = int(0.5 * tpf.shape[2])
-			if FFT:
-				template[int(row[i] + offset1),int(col[i] + offset2)] = tcounts[i]
-				template = signal.fftconvolve(template, kernal, mode='same')
+			template = np.zeros(((20+tpf.shape[1]),(20+tpf.shape[2])))
+			offset1 = int(10)
+			offset2 = int(10)
+			if PRF:
+				kernal = Get_PRF(row[i] + tpf.row, col[i] + tpf.column,tpf.camera,tpf.ccd)
+				kernal = kernal / np.nansum(kernal)
+				#print(template.shape)
+				
+				if FFT:
+					template[int(row[i] + offset1),int(col[i] + offset2)] = tcounts[i]
+					template = signal.fftconvolve(template, kernal, mode='same')
+				else:
+					optics = kernal * tcounts[i]
+					r = int(row[i] + offset1)
+					c = int(col[i] + offset2)
+					template = Add_convolved_sources(r,c,optics,template)
 			else:
-				optics = kernal * tcounts[i]
-				r = int(row[i] + offset1)
-				c = int(col[i] + offset2)
-				template = Add_convolved_sources(r,c,optics,template)
-			template = template[offset1:int(3*offset1),offset2-1:int(3*offset2-1)]
+				template[int(row[i] + offset1),int(col[i] + offset2)] = tcounts[i]
+			template = template[offset1:int(offset1 + tpf.shape[1]),offset2:int(offset2 +tpf.shape[2])]
 		
 			sources[i] += template
 	if Plot:
@@ -311,7 +318,7 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 		im = plt.imshow(gaia,origin='lower', norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
-		#plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
+		plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
 		ax = plt.gca()
 		divider = make_axes_locatable(ax)
 		cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -326,7 +333,7 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 		im = plt.imshow(tess,origin='lower',norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
-		#plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
+		plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
 		ax = plt.gca()
 		divider = make_axes_locatable(ax)
 		cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -337,7 +344,7 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Bkg_limit = 20.5, Zeropoint = 20.44,
 		if type(Save) != type(None):
 			plt.savefig(Save)
 
-	return sources
+	return sources, tpf
 
 def Add_convolved_sources(Row, Col, Optics,Template):
     """
@@ -406,6 +413,55 @@ def Add_convolved_sources(Row, Col, Optics,Template):
 
     return Template
 
+def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = 5):
+	"""
+	Determine the sky background of the real image by using the Scene.
+	This works well for known surces, but wont work for random searches.
+	Finds all sky pixels based off 'Limit' then interpolates the sky background 
+	for the sources and masked areas. Workes well for large areas.
+
+	-------
+	Inputs-
+	-------
+		Scene 			array 	Array of images containing a source each 
+		tpf 			class 	Target pixel file lighkurve class
+		Custom_mask 	array 	Manual mask to ensure science target is masked
+		Limit 			float 	Counts limit for determining sky pixels
+
+	--------
+	Outputs-
+	--------
+		bkg 			array 	Array with shape tpf.flux containing background 
+								flux for each frame. 
+	"""
+    
+    mask = np.ones_like(Scene[0])
+    for s in Scene:
+        mask = mask * (s <= Limit)
+    if type(Custom_mask) != type(None):
+        print('additional mask')
+        mask = mask * Custom_mask
+    bkg = np.zeros_like(tpf.flux)
+    x = np.arange(0, mask.shape[1])
+    y = np.arange(0, mask.shape[0])
+    #mask invalid values
+    for i in range(len(tpf.flux)):
+        arr = tpf.flux[i]
+        arr[mask==0] = np.nan
+        arr = np.ma.masked_invalid(arr)
+        xx, yy = np.meshgrid(x, y)
+        #get only the valid values
+        x1 = xx[~arr.mask]
+        y1 = yy[~arr.mask]
+        newarr = arr[~arr.mask]
+
+        estimate = interpolate.griddata((x1, y1), newarr.ravel(),
+                                  (xx, yy),method='linear')
+        bkg[i] = estimate
+        
+    return bkg
+
+
 
 def Print_snapshot():
 	snapshot = tracemalloc.take_snapshot()
@@ -448,19 +504,22 @@ def Plot_comparison(PSorig,PSconv,Downsamp = []):
 	else:
 		plt.figure(figsize=(10, 4))
 		
-		norm = ImageNormalize(vmin=np.nanmin(PSorig)+0.1*np.nanmin(PSorig), vmax=np.nanmax(PSorig)-0.9*np.nanmax(PSorig), stretch=SqrtStretch())
+		norm = ImageNormalize(vmin=np.nanmin(PSorig)+0.1*np.nanmin(PSorig), 
+			vmax=np.nanmax(PSorig)-0.9*np.nanmax(PSorig), stretch=SqrtStretch())
 		plt.subplot(1, 3, 1)
 		plt.title('PS original')
 		plt.imshow(PSorig,origin='lower',norm=norm)#,vmax=60000)
 		#plt.colorbar()
 
-		norm = ImageNormalize(vmin=np.nanmin(PSconv)+0.1*np.nanmin(PSconv), vmax=np.nanmax(PSconv)-0.1*np.nanmax(PSconv), stretch=SqrtStretch())
+		norm = ImageNormalize(vmin=np.nanmin(PSconv)+0.1*np.nanmin(PSconv), 
+			vmax=np.nanmax(PSconv)-0.1*np.nanmax(PSconv), stretch=SqrtStretch())
 		plt.subplot(1, 3, 2)
 		plt.title('PS convolved')
 		plt.imshow(PSconv,origin='lower',norm=norm)#,vmax=1000)
 		#plt.colorbar()
 
-		norm = ImageNormalize(vmin=np.nanmin(Downsamp)+0.1*np.nanmin(Downsamp), vmax=np.nanmax(Downsamp)-0.1*np.nanmax(Downsamp), stretch=SqrtStretch())
+		norm = ImageNormalize(vmin=np.nanmin(Downsamp)+0.1*np.nanmin(Downsamp), 
+			vmax=np.nanmax(Downsamp)-0.1*np.nanmax(Downsamp), stretch=SqrtStretch())
 		plt.subplot(1, 3, 3)
 		plt.title('TESS resolution')
 		plt.imshow(Downsamp,origin='lower',norm=norm)#,vmax=1000)
