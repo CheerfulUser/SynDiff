@@ -15,6 +15,7 @@ import tessprf as prf
 
 
 from PS_image_download import *
+from utils import *
 
 from scipy import interpolate
 
@@ -360,7 +361,7 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit
 			template = template[offset1:int(offset1 + tpf.shape[1]*Scale),offset2:int(offset2 +tpf.shape[2]*Scale)]
 			#print('template shape ',template.shape)
 			#print(np.nansum(template))
-			sources[i] = block_reduce(template,block_size=(Scale,Scale),func=np.nansum) #Downsample(template,Scale)
+			sources[i] = Downsample(template,Scale,pix_response = True) #block_reduce(template,block_size=(Scale,Scale),func=np.nansum)
 
 		else:
 			template = np.zeros(((20+tpf.shape[1]),(20+tpf.shape[2])))
@@ -611,7 +612,7 @@ def Plot_comparison(PSorig,PSconv,Downsamp = []):
 		plt.savefig(savename)
 		return 'Plotted'
 
-def Downsample(Image,Scale):
+def Downsample(Image,Scale,pix_response = True):
 	"""
 	Downsamples an image to the resolution specified by 'Scale'.
 	-------
@@ -638,7 +639,10 @@ def Downsample(Image,Scale):
 		for j in range(len(xnew)):
 			xstart = int(j*Scale)
 			xend = int(xstart + Scale)
-			down[i,j] = np.nansum(Image[ystart:yend,xstart:xend])
+			if pix_response:
+				down[i,j] = np.nansum(Image[ystart:yend,xstart:xend] * Gaussian2D(Scale))
+			else:
+				down[i,j] = np.nansum(Image[ystart:yend,xstart:xend])
 	#print('down ', down.shape)
 	return down
 	
