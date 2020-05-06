@@ -172,15 +172,17 @@ def Get_TESS_local(Path, Sector, Camera, CCD, Time = None):
 		raise FileExistsError("TESS file does not exist: '{}'".format(File))
 		pass
 
-def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
+def Get_Catalogue(tpf, Catalog = 'gaia'):
 	"""
-	Get the coordinates and gia mag of all Gaia sources in the field of view.
+	Get the coordinates and mag of all sources in the field of view from a specified catalogue.
 
 	-------
 	Inputs-
 	-------
 		tpf 				class 	target pixel file lightkurve class
 		magnitude_limit 	float 	cutoff for Gaia sources
+		Offset 				int 	offset for the boundary 
+		Catalogue 			str 	catalogue name to query vizier 
 	
 	--------
 	Outputs-
@@ -196,17 +198,42 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 	# We are querying with a diameter as the radius, overfilling by 2x.
 	from astroquery.vizier import Vizier
 	Vizier.ROW_LIMIT = -1
-	result = Vizier.query_region(c1, catalog=["I/345/gaia2"],
+	if Catalog == 'gaia':
+		catalog = "I/345/gaia2"
+	elif Catalog == 'ps1':
+		catalog = "II/349/ps1"
+	result = Vizier.query_region(c1, catalog=[catalog],
 								 radius=Angle(np.max(tpf.shape[1:]) * pix_scale, "arcsec"))
 	no_targets_found_message = ValueError('Either no sources were found in the query region '
 										  'or Vizier is unavailable')
-	too_few_found_message = ValueError('No sources found brighter than {:0.1f}'.format(magnitude_limit))
+	#too_few_found_message = ValueError('No sources found brighter than {:0.1f}'.format(magnitude_limit))
 	if result is None:
 		raise no_targets_found_message
 	elif len(result) == 0:
-		raise too_few_found_message
-	result = result["I/345/gaia2"].to_pandas()
+		raise no_targets_found_message
+	result = result[catalog].to_pandas()
 	
+	return result 
+
+
+def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
+	"""
+	Get the coordinates and mag of all gaia sources in the field of view.
+
+	-------
+	Inputs-
+	-------
+		tpf 				class 	target pixel file lightkurve class
+		magnitude_limit 	float 	cutoff for Gaia sources
+		Offset 				int 	offset for the boundary 
+	
+	--------
+	Outputs-
+	--------
+		coords 	array	coordinates of sources
+		Gmag 	array 	Gmags of sources
+	"""
+	result =  Get_Catalogue(tpf, Catalog = 'gaia')
 	result = result[result.Gmag < magnitude_limit]
 	if len(result) == 0:
 		raise no_targets_found_message
@@ -218,10 +245,57 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 		   ((coords[:,0] < (tpf.shape[1] + 10)) & (coords[:,1] < (tpf.shape[2] + 10))))
 	coords = coords[ind]
 	Gmag = Gmag[ind]
+	Tmag = Gmag - 0.5
 	#Jmag = Jmag[ind]
-	return coords, Gmag
+	return coords, Tmag
 
-def Gaia_scene(Ra,Dec,Size,Maglim= 19,Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
+def PS1_to_TESS_mag(PS1):
+	"""
+	https://arxiv.org/pdf/1706.00495.pdf pg.9
+	"""
+	g = PS1.gKmag.values
+	i = PS1.iKmag.values
+	t = i - 0.00206*(g - i)**3 - 0.02370*(g - i)**2 + 0.00573*(g - i) - 0.3078
+	PS1['tmag'] = t
+	return PS1
+
+def Get_PS1(tpf, magnitude_limit = 18, Offset = 10):
+	"""
+	Get the coordinates and mag of all PS1 sources in the field of view.
+
+	-------
+	Inputs-
+	-------
+		tpf 				class 	target pixel file lightkurve class
+		magnitude_limit 	float 	cutoff for Gaia sources
+		Offset 				int 	offset for the boundary 
+
+	--------
+	Outputs-
+	--------
+		coords 	array	coordinates of sources
+		Gmag 	array 	Gmags of sources
+	"""
+	result =  Get_Catalogue(tpf, Catalog = 'ps1')
+	result = result[np.isfinite(result.gKmag) & np.isfinite(result.iKmag)]
+	result = PS1_to_TESS_mag(result)
+	
+	
+	result = result[result.tmag < magnitude_limit]
+	if len(result) == 0:
+		raise no_targets_found_message
+	radecs = np.vstack([result['RAJ2000'], result['DEJ2000']]).T
+	coords = tpf.wcs.all_world2pix(radecs, 0) ## TODO, is origin supposed to be zero or one?
+	Tessmag = result['tmag'].values
+	#Jmag = result['Jmag']
+	ind = (((coords[:,0] >= -10) & (coords[:,1] >= -10)) & 
+		   ((coords[:,0] < (tpf.shape[1] + 10)) & (coords[:,1] < (tpf.shape[2] + 10))))
+	coords = coords[ind]
+	Tessmag = Tessmag[ind]
+	#Jmag = Jmag[ind]
+	return coords, Tessmag
+
+def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
 				Scale = 100,Interpolate = False, FFT = False,PRF=True,
 				Plot= False, Save = None):
 	"""
@@ -252,12 +326,15 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Sector = None,Bkg_limit = 20.5, Zeropoint 
 
 	"""
 	tpf = Get_TESS(Ra,Dec,Size,Sector = Sector)
-	# pos returned as column row 
-	pos, gmag = Get_Gaia(tpf,magnitude_limit=Maglim)
+	# pos returned as column row
+	if Catalog == 'gaia':
+		pos, Tmag = Get_Gaia(tpf,magnitude_limit=Maglim)
+	if Catalog == 'ps1':
+		pos, Tmag = Get_PS1(tpf,magnitude_limit=Maglim)
+
 	col = pos[:,0]+.5
 	row = pos[:,1]+.5
 	
-	Tmag = gmag - 0.5
 	tcounts = 10**(-2/5*(Tmag - Zeropoint))
 	bkg = 10**(-2/5*(Bkg_limit - Zeropoint))
 
@@ -308,14 +385,14 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Sector = None,Bkg_limit = 20.5, Zeropoint 
 		
 			sources[i] += template
 	if Plot:
-		gaia = np.nansum(sources,axis=0)
+		scene = np.nansum(sources,axis=0)
 		#gaia = rotate(np.flipud(gaia*10),-90)
 		plt.figure(figsize=(8,4))
 		plt.subplot(1,2,1)
-		plt.title('Gaia scene')
-		norm = ImageNormalize(vmin=np.nanmin(gaia), 
-							  vmax=np.nanmax(gaia), stretch=SqrtStretch())
-		im = plt.imshow(gaia,origin='lower', norm = norm)
+		plt.title('{} scene'.format(Catalog))
+		norm = ImageNormalize(vmin=np.nanmin(scene), 
+							  vmax=np.nanmax(scene), stretch=SqrtStretch())
+		im = plt.imshow(scene,origin='lower', norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
 		plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
@@ -327,7 +404,7 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Sector = None,Bkg_limit = 20.5, Zeropoint 
 
 		plt.subplot(1,2,2)	
 		plt.title('TESS image')
-		tess = np.nanmedian(tpf.flux,axis=0)
+		tess = np.nanmedian(tpf.flux-96,axis=0)
 		norm = ImageNormalize(vmin=np.nanmin(tess), 
 							  vmax=np.nanmax(tess), stretch=SqrtStretch())
 		im = plt.imshow(tess,origin='lower',norm = norm)
@@ -347,73 +424,73 @@ def Gaia_scene(Ra,Dec,Size,Maglim= 19,Sector = None,Bkg_limit = 20.5, Zeropoint 
 	return sources, tpf
 
 def Add_convolved_sources(Row, Col, Optics,Template):
-    """
-    An ugly function that inserts a small array into a larger array.
-    With this fft is not needed for single objects.
+	"""
+	An ugly function that inserts a small array into a larger array.
+	With this fft is not needed for single objects.
 
-    -------
-    Inputs-
-    -------
-    Row 		int  	Row of source
-    Col 		int  	Column of source
-    Optics 		array 	Small array to inject
-    Template 	array 	Large array to be get injected 
+	-------
+	Inputs-
+	-------
+	Row 		int  	Row of source
+	Col 		int  	Column of source
+	Optics 		array 	Small array to inject
+	Template 	array 	Large array to be get injected 
 
-    -------
-    Output-
-    -------
-    Template 	array 	Large array with small array injected 
+	-------
+	Output-
+	-------
+	Template 	array 	Large array with small array injected 
 
-    """
-    if Optics.shape[0]/2 == int(Optics.shape[0]/2):
-        start1 = int(Row - Optics.shape[0]/2)
-        end1 = int(Row + Optics.shape[0]/2)
-    else:
-        start1 = int(Row - (Optics.shape[0]-1)/2 -1)
-        end1 = int(Row + (Optics.shape[0]-1)/2)
+	"""
+	if Optics.shape[0]/2 == int(Optics.shape[0]/2):
+		start1 = int(Row - Optics.shape[0]/2)
+		end1 = int(Row + Optics.shape[0]/2)
+	else:
+		start1 = int(Row - (Optics.shape[0]-1)/2 -1)
+		end1 = int(Row + (Optics.shape[0]-1)/2)
 
-    if start1 < 0:
-        o_start1 = abs(start1)
-        start1 = 0
-    else:
-        o_start1 = 0
+	if start1 < 0:
+		o_start1 = abs(start1)
+		start1 = 0
+	else:
+		o_start1 = 0
 
-    if end1 > Template.shape[0]:
-        o_end1 = Optics.shape[0]-abs(end1 - (Template.shape[0]))
-        end1 = Template.shape[0]
-    else:
-        o_end1 = Optics.shape[0]
-    if Optics.shape[0]/2 == int(Optics.shape[0]/2):
-        start2 = int(Col - Optics.shape[1]/2)
-        end2 = int(Col + Optics.shape[1]/2)
-    else:
-        start2 = int(Col - (Optics.shape[1]-1)/2 -1)
-        end2 = int(Col + (Optics.shape[1]-1)/2)
+	if end1 > Template.shape[0]:
+		o_end1 = Optics.shape[0]-abs(end1 - (Template.shape[0]))
+		end1 = Template.shape[0]
+	else:
+		o_end1 = Optics.shape[0]
+	if Optics.shape[0]/2 == int(Optics.shape[0]/2):
+		start2 = int(Col - Optics.shape[1]/2)
+		end2 = int(Col + Optics.shape[1]/2)
+	else:
+		start2 = int(Col - (Optics.shape[1]-1)/2 -1)
+		end2 = int(Col + (Optics.shape[1]-1)/2)
 
-    if start2 < 0:
-        #print('s2',start2)
-        o_start2 = abs(start2)
-        start2 = 0
-    else:
-        o_start2 = 0
+	if start2 < 0:
+		#print('s2',start2)
+		o_start2 = abs(start2)
+		start2 = 0
+	else:
+		o_start2 = 0
 
-    if end2 > Template.shape[1]:
-        #print('e2')
-        o_end2 = Optics.shape[1]-abs(end2 - (Template.shape[1]))
-        end2 = Template.shape[1]
-    else:
-        o_end2 = Optics.shape[1]
+	if end2 > Template.shape[1]:
+		#print('e2')
+		o_end2 = Optics.shape[1]-abs(end2 - (Template.shape[1]))
+		end2 = Template.shape[1]
+	else:
+		o_end2 = Optics.shape[1]
 
-    #print(o_start1,o_end1)
-    #print(start2,end2)
-    #print(o_start2,o_end2)
-    #print(Template[start1:end1,start2:end2].shape)
-    #print('optics', Optics[o_start1:o_end1,o_start2:o_end2].shape)
-    Template[start1:end1,start2:end2] = Optics[o_start1:o_end1,o_start2:o_end2]
+	#print(o_start1,o_end1)
+	#print(start2,end2)
+	#print(o_start2,o_end2)
+	#print(Template[start1:end1,start2:end2].shape)
+	#print('optics', Optics[o_start1:o_end1,o_start2:o_end2].shape)
+	Template[start1:end1,start2:end2] = Optics[o_start1:o_end1,o_start2:o_end2]
 
-    return Template
+	return Template
 
-def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = 5):
+def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = .1,Guess = True):
 	"""
 	Determine the sky background of the real image by using the Scene.
 	This works well for known surces, but wont work for random searches.
@@ -434,32 +511,36 @@ def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = 5):
 		bkg 			array 	Array with shape tpf.flux containing background 
 								flux for each frame. 
 	"""
-    
-    mask = np.ones_like(Scene[0])
-    for s in Scene:
-        mask = mask * (s <= Limit)
-    if type(Custom_mask) != type(None):
-        print('additional mask')
-        mask = mask * Custom_mask
-    bkg = np.zeros_like(tpf.flux)
-    x = np.arange(0, mask.shape[1])
-    y = np.arange(0, mask.shape[0])
-    #mask invalid values
-    for i in range(len(tpf.flux)):
-        arr = tpf.flux[i]
-        arr[mask==0] = np.nan
-        arr = np.ma.masked_invalid(arr)
-        xx, yy = np.meshgrid(x, y)
-        #get only the valid values
-        x1 = xx[~arr.mask]
-        y1 = yy[~arr.mask]
-        newarr = arr[~arr.mask]
+	mask = np.ones_like(Scene[0])
+	for s in Scene:
+		mask = mask * (s <= Limit)
+	if type(Custom_mask) != type(None):
+		print('additional mask')
+		mask = mask * Custom_mask
+	if ~mask.any():
+		err_message = 'All pixels masked with limit = {}, choose a higher threshold.' 
+		raise ValueError(err_message)
+	bkg = np.zeros_like(tpf.flux)
+	x = np.arange(0, mask.shape[1])
+	y = np.arange(0, mask.shape[0])
+	#mask invalid values
+	for i in range(len(tpf.flux)):
+		arr = tpf.flux[i]
+		arr[mask==0] = np.nan
+		arr = np.ma.masked_invalid(arr)
+		xx, yy = np.meshgrid(x, y)
+		#get only the valid values
+		x1 = xx[~arr.mask]
+		y1 = yy[~arr.mask]
+		newarr = arr[~arr.mask]
 
-        estimate = interpolate.griddata((x1, y1), newarr.ravel(),
-                                  (xx, yy),method='linear')
-        bkg[i] = estimate
-        
-    return bkg
+		estimate = interpolate.griddata((x1, y1), newarr.ravel(),
+								  (xx, yy),method='linear')
+		if Guess:
+			estimate[np.isnan(estimate)] = np.nanmedian(estimate)
+		bkg[i] = estimate
+		
+	return bkg
 
 
 
