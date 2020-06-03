@@ -47,7 +47,7 @@ def geturl(ra, dec, size=240, output_size=None, filters="grizy", format="jpg", c
         raise ValueError("format must be one of jpg, png, fits")
     table = getimages(ra,dec,size=size,filters=filters)
     url = ("https://ps1images.stsci.edu/cgi-bin/fitscut.cgi?"
-           "ra={ra}&dec={dec}&size={size}&format={format}").format(**locals())
+           "ra={ra}&dec={dec}&size={size}&format={format}&filetypes=stack").format(**locals())
     if output_size:
         url = url + "&output_size={}".format(output_size)
     # sort filters from red to blue

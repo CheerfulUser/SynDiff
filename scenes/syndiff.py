@@ -16,6 +16,7 @@ import tessprf as prf
 
 from PS_image_download import *
 from utils import *
+from ps1_funcs import *
 
 from scipy import interpolate
 
@@ -181,9 +182,7 @@ def Get_Catalogue(tpf, Catalog = 'gaia'):
 	Inputs-
 	-------
 		tpf 				class 	target pixel file lightkurve class
-		magnitude_limit 	float 	cutoff for Gaia sources
-		Offset 				int 	offset for the boundary 
-		Catalogue 			str 	catalogue name to query vizier 
+		Catalogue 			str 	Permitted options: 'gaia', 'dist', 'ps1'
 	
 	--------
 	Outputs-
@@ -201,8 +200,13 @@ def Get_Catalogue(tpf, Catalog = 'gaia'):
 	Vizier.ROW_LIMIT = -1
 	if Catalog == 'gaia':
 		catalog = "I/345/gaia2"
+	elif Catalog == 'dist':
+		catalog = "I/347/gaia2dis"
 	elif Catalog == 'ps1':
 		catalog = "II/349/ps1"
+	else:
+		raise ValueError("{} not recognised as a catalog. Available options: 'gaia', 'dist','ps1'")
+
 	result = Vizier.query_region(c1, catalog=[catalog],
 								 radius=Angle(np.max(tpf.shape[1:]) * pix_scale, "arcsec"))
 	no_targets_found_message = ValueError('Either no sources were found in the query region '
@@ -234,12 +238,17 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 		coords 	array	coordinates of sources
 		Gmag 	array 	Gmags of sources
 	"""
+	keys = ['objID','RAJ2000','DEJ2000','e_RAJ2000','e_DEJ2000','gmag','e_gmag','gKmag','e_gKmag','rmag',
+			'e_rmag','rKmag','e_rKmag','imag','e_imag','iKmag','e_iKmag','zmag','e_zmag','zKmag','e_zKmag',
+			'ymag','e_ymag','yKmag','e_yKmag','tmag','gaiaid','gaiamag','gaiadist','gaiadist_u','gaiadist_l',
+			'row','col']
+
 	result =  Get_Catalogue(tpf, Catalog = 'gaia')
 	result = result[result.Gmag < magnitude_limit]
 	if len(result) == 0:
 		raise no_targets_found_message
 	radecs = np.vstack([result['RA_ICRS'], result['DE_ICRS']]).T
-	coords = tpf.wcs.all_world2pix(radecs, 0) ## TODO, is origin supposed to be zero or one?
+	coords = tpf.wcs.all_world2pix(radecs, 1) ## TODO, is origin supposed to be zero or one?
 	Gmag = result['Gmag'].values
 	#Jmag = result['Jmag']
 	ind = (((coords[:,0] >= -10) & (coords[:,1] >= -10)) & 
@@ -250,12 +259,28 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 	#Jmag = Jmag[ind]
 	return coords, Tmag
 
+def Get_Gaia_distance(Table):
+	"""
+	I/347/gaia2dis   Distances to 1.33 billion stars in Gaia DR2 (Bailer-Jones+, 2018)
+	"""
+	catalog = "I/347/gaia2dis"	
+	result = Vizier.query_region(c1, catalog=[catalog],
+								 radius=Angle(np.max(tpf.shape[1:]) * pix_scale, "arcsec"))
+	no_targets_found_message = ValueError('Either no sources were found in the query region '
+										  'or Vizier is unavailable')
+
 def PS1_to_TESS_mag(PS1):
 	"""
 	https://arxiv.org/pdf/1706.00495.pdf pg.9
 	"""
-	g = PS1.gKmag.values
-	i = PS1.iKmag.values
+	#coeffs = np.array([0.6767,0.9751,0.9773,0.6725])
+	g = PS1.gmag.values
+	r = PS1.rmag.values
+	i = PS1.imag.values
+	#z = PS1.zmag.values
+	#y = PS1.ymag.values
+
+	#t = coeffs[0] * r + coeffs[1] * i #+ coeffs[2] * z + coeffs[3] * y
 	t = i - 0.00206*(g - i)**3 - 0.02370*(g - i)**2 + 0.00573*(g - i) - 0.3078
 	PS1['tmag'] = t
 	return PS1
@@ -278,7 +303,7 @@ def Get_PS1(tpf, magnitude_limit = 18, Offset = 10):
 		Gmag 	array 	Gmags of sources
 	"""
 	result =  Get_Catalogue(tpf, Catalog = 'ps1')
-	result = result[np.isfinite(result.gKmag) & np.isfinite(result.iKmag)]
+	result = result[np.isfinite(result.rmag) & np.isfinite(result.imag)]# & np.isfinite(result.zmag)& np.isfinite(result.ymag)]
 	result = PS1_to_TESS_mag(result)
 	
 	
@@ -286,7 +311,7 @@ def Get_PS1(tpf, magnitude_limit = 18, Offset = 10):
 	if len(result) == 0:
 		raise no_targets_found_message
 	radecs = np.vstack([result['RAJ2000'], result['DEJ2000']]).T
-	coords = tpf.wcs.all_world2pix(radecs, 0) ## TODO, is origin supposed to be zero or one?
+	coords = tpf.wcs.all_world2pix(radecs, 1) ## TODO, is origin supposed to be zero or one?
 	Tessmag = result['tmag'].values
 	#Jmag = result['Jmag']
 	ind = (((coords[:,0] >= -10) & (coords[:,1] >= -10)) & 
@@ -296,7 +321,107 @@ def Get_PS1(tpf, magnitude_limit = 18, Offset = 10):
 	#Jmag = Jmag[ind]
 	return coords, Tessmag
 
-def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
+
+def Unified_catalog(tpf,magnitude_limit=18,offset=10):
+	"""
+	Find all sources present in the TESS field from PS!, and Gaia. Catalogs are cross
+	matched through distance, and Gaia distances are assigned from Gaia ID.
+	Returns a pandas dataframe with all relevant catalog information
+	
+	------
+	Input-
+	------
+		tpf  lk.Targetpixelfile  target pixel file of the TESS region
+		
+	-------
+	Output-
+	-------
+		result pd.DataFrame	 Combined catalog
+	"""
+	import pandas as pd
+	pd.options.mode.chained_assignment = None
+	# need to look at how the icrs coords are offset from J2000
+	# Get gaia catalogs 
+	gaia = Get_Catalogue(tpf, Catalog = 'gaia')
+	gaiadist = Get_Catalogue(tpf, Catalog = 'dist')
+	# Get PS1 and structure it
+	ps1 = Get_Catalogue(tpf, Catalog = 'ps1')
+	ps1 = ps1[np.isfinite(ps1.rmag) & np.isfinite(ps1.imag)]# & np.isfinite(result.zmag)& np.isfinite(result.ymag)]
+	ps1 = PS1_to_TESS_mag(ps1)
+	keep = ['objID','RAJ2000', 'DEJ2000','e_RAJ2000','e_DEJ2000','gmag', 'e_gmag', 'gKmag',
+		   'e_gKmag', 'rmag', 'e_rmag', 'rKmag', 'e_rKmag',
+		   'imag', 'e_imag', 'iKmag', 'e_iKmag', 'zmag', 'e_zmag',
+		   'zKmag', 'e_zKmag', 'ymag', 'e_ymag', 'yKmag', 'e_yKmag',
+		   'tmag']
+	result = ps1[keep]
+	# Define the columns for Gaia information
+	result['gaiaid'] = 0
+	result['gaiaid'] = result['gaiaid'].astype(int)
+	result['gaiamag'] = np.nan
+	result['gaiadist'] = np.nan
+	result['gaiadist_u'] = np.nan
+	result['gaiadist_l'] = np.nan
+	# Set up arrays to calculate the distance between all PS1 and Gaia sources
+	dra = np.zeros((len(gaia),len(result)))
+	dra = dra + gaia.RA_ICRS.values[:,np.newaxis]
+	dra = dra - result.RAJ2000.values[np.newaxis,:]
+
+	dde = np.zeros((len(gaia),len(result)))
+	dde = dde + gaia.DE_ICRS.values[:,np.newaxis]
+	dde = dde - result.DEJ2000.values[np.newaxis,:]
+	# Calculate distance
+	dist = np.sqrt(dde**2 + dra**2)
+	ind = np.argmin(dist,axis=1)
+
+	far = dist <= (1/60**2) * 1 # difference smaller than 1 arcsec
+	# Get index of all valid matches and add the Gaia info
+	indo = np.nansum(far,axis=1) > 0
+	ind = ind[indo]
+	result.gaiaid.iloc[ind] = gaia.Source.values[indo]
+	result.gaiamag.iloc[ind] = gaia.Gmag.values[indo]
+	result.tmag.iloc[ind] = gaia.Gmag.values[indo] - .5
+	# Add Gaia sources without matches to the dataframe
+	keys = list(result.keys())
+	indo = np.where(~indo)[0]
+	for i in indo:
+		df = pd.DataFrame(columns=keys)
+		row = np.zeros(len(keys)) * np.nan
+		df.RAJ2000 = [gaia.RA_ICRS[i]]; df.DEJ2000 = [gaia.DE_ICRS[i]] 
+		df.gaiaid = [gaia.Source[i]]; df.gaiamag = [gaia.Gmag[i]]
+		df.tmag = [gaia.Gmag[i] - 0.5] 
+		result = result.append(df,ignore_index=True)
+
+	i = np.where(result.gaiaid.values == 3904527697615028736)
+	print(result.iloc[i])
+
+	# Find matches from the distance catalog and add them in
+	s = np.zeros((len(gaiadist),len(result)))
+	s = s + gaiadist.Source.values[:,np.newaxis]
+	s = s - result.gaiaid.values[np.newaxis,:]
+	ind = np.where(s == 0)[1]
+
+	result.gaiadist.iloc[ind] = gaiadist.rest
+	result.gaiadist_u.iloc[ind] = gaiadist.B_rest
+	result.gaiadist_l.iloc[ind] = gaiadist.b_rest
+	
+	result = result.iloc[result.tmag.values < magnitude_limit]
+	no_targets_found_message = ValueError('Either no sources were found in the query region '
+										  'or Vizier is unavailable')
+	if len(result) == 0:
+		raise no_targets_found_message
+
+	radecs = np.vstack([result['RAJ2000'], result['DEJ2000']]).T
+	coords = tpf.wcs.all_world2pix(radecs, 1)
+	result['row'] = coords[:,1]
+	result['col'] = coords[:,0]
+	#Jmag = result['Jmag']
+	ind = (((coords[:,0] >= -offset) & (coords[:,1] >= -offset)) & 
+		   ((coords[:,0] < (tpf.shape[1] + offset)) & (coords[:,1] < (tpf.shape[2] + offset))))
+	result = result.iloc[ind]
+	
+	return result
+
+def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='unified',Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
 				Scale = 100,Interpolate = False, FFT = False,PRF=True,
 				Plot= False, Save = None):
 	"""
@@ -332,15 +457,27 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit
 		pos, Tmag = Get_Gaia(tpf,magnitude_limit=Maglim)
 	if Catalog == 'ps1':
 		pos, Tmag = Get_PS1(tpf,magnitude_limit=Maglim)
+	if Catalog == 'unified':
+		result = Unified_catalog(tpf,magnitude_limit=Maglim)
+		col = result.col.values + .5
+		row = result.row.values + .5
+		Tmag = result.tmag.values
+	else:
+		col = pos[:,0] + .5
+		row = pos[:,1] + .5
+		result = [pos,Tmag]
 
-	col = pos[:,0]+.5
-	row = pos[:,1]+.5
+	syndiff = {}
+	syndiff['catalog'] = result
+	syndiff['tpf'] = tpf
+	
 	
 	tcounts = 10**(-2/5*(Tmag - Zeropoint))
 	bkg = 10**(-2/5*(Bkg_limit - Zeropoint))
 
-	sources = np.zeros((len(pos),tpf.shape[1],tpf.shape[2])) #+ bkg
-	for i in range(len(pos)):
+	print(len(tcounts))
+	sources = np.zeros((len(col),tpf.shape[1],tpf.shape[2])) #+ bkg
+	for i in range(len(col)):
 		if Interpolate:
 			template = np.zeros(((tpf.shape[1]+20)*Scale,(tpf.shape[2]+20)*Scale))
 			#print('template shape ',template.shape)
@@ -385,6 +522,8 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit
 			template = template[offset1:int(offset1 + tpf.shape[1]),offset2:int(offset2 +tpf.shape[2])]
 		
 			sources[i] += template
+	syndiff['sources'] = sources
+
 	if Plot:
 		scene = np.nansum(sources,axis=0)
 		#gaia = rotate(np.flipud(gaia*10),-90)
@@ -396,7 +535,7 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit
 		im = plt.imshow(scene,origin='lower', norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
-		plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
+		plt.plot(col-.5,row-.5,'r.',alpha=0.5)
 		ax = plt.gca()
 		divider = make_axes_locatable(ax)
 		cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -411,7 +550,7 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit
 		im = plt.imshow(tess,origin='lower',norm = norm)
 		plt.xlim(-0.5, Size-0.5)
 		plt.ylim(-0.5, Size-0.5)
-		plt.plot(pos[:,0],pos[:,1],'r.',alpha=0.5)
+		plt.plot(col-.5,row-.5,'r.',alpha=0.5)
 		ax = plt.gca()
 		divider = make_axes_locatable(ax)
 		cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -422,7 +561,7 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='gaia',Sector = None,Bkg_limit
 		if type(Save) != type(None):
 			plt.savefig(Save)
 
-	return sources, tpf
+	return syndiff
 
 def Add_convolved_sources(Row, Col, Optics,Template):
 	"""
