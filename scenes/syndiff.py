@@ -12,6 +12,8 @@ sys.path.append(PACKAGEDIR + '/dave/diffimg/')
 #print(sys.path)
 import tessprf as prf
 
+from photutils import DAOStarFinder
+from astropy.stats import sigma_clipped_stats
 
 
 from PS_image_download import *
@@ -40,6 +42,8 @@ from scipy.ndimage import  rotate
 
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+
 
 def Get_PRF(Row,Col,Camera,CCD):
 	"""
@@ -178,6 +182,9 @@ def Get_Catalogue(tpf, Catalog = 'gaia'):
 	"""
 	Get the coordinates and mag of all sources in the field of view from a specified catalogue.
 
+
+	I/347/gaia2dis   Distances to 1.33 billion stars in Gaia DR2 (Bailer-Jones+, 2018)
+
 	-------
 	Inputs-
 	-------
@@ -259,15 +266,6 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 	#Jmag = Jmag[ind]
 	return coords, Tmag
 
-def Get_Gaia_distance(Table):
-	"""
-	I/347/gaia2dis   Distances to 1.33 billion stars in Gaia DR2 (Bailer-Jones+, 2018)
-	"""
-	catalog = "I/347/gaia2dis"	
-	result = Vizier.query_region(c1, catalog=[catalog],
-								 radius=Angle(np.max(tpf.shape[1:]) * pix_scale, "arcsec"))
-	no_targets_found_message = ValueError('Either no sources were found in the query region '
-										  'or Vizier is unavailable')
 
 def PS1_to_TESS_mag(PS1):
 	"""
@@ -391,9 +389,6 @@ def Unified_catalog(tpf,magnitude_limit=18,offset=10):
 		df.tmag = [gaia.Gmag[i] - 0.5] 
 		result = result.append(df,ignore_index=True)
 
-	i = np.where(result.gaiaid.values == 3904527697615028736)
-	print(result.iloc[i])
-
 	# Find matches from the distance catalog and add them in
 	s = np.zeros((len(gaiadist),len(result)))
 	s = s + gaiadist.Source.values[:,np.newaxis]
@@ -421,7 +416,7 @@ def Unified_catalog(tpf,magnitude_limit=18,offset=10):
 	
 	return result
 
-def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='unified',Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
+def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='unified',Local=None,Sector = None,Bkg_limit = 20.5, Zeropoint = 20.44, 
 				Scale = 100,Interpolate = False, FFT = False,PRF=True,
 				Plot= False, Save = None):
 	"""
@@ -451,7 +446,10 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='unified',Sector = None,Bkg_li
 		soures 			array 	Array of simulated TESS images for each Gaia sourcetes
 
 	"""
-	tpf = Get_TESS(Ra,Dec,Size,Sector = Sector)
+	if type(Local) == type(None):
+		tpf = Get_TESS(Ra,Dec,Size,Sector = Sector)
+	else:
+		tpf = lk.TessTargetPixelFile(Local)
 	# pos returned as column row
 	if Catalog == 'gaia':
 		pos, Tmag = Get_Gaia(tpf,magnitude_limit=Maglim)
@@ -630,7 +628,21 @@ def Add_convolved_sources(Row, Col, Optics,Template):
 
 	return Template
 
-def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = .1,Guess = True):
+def Sig_clip_frames(tpf,mask,sigma=3,itters=5):
+    masks = np.zeros_like(tpf.flux) + mask[np.newaxis,:,:]
+    
+    for i in range(itters):
+        masked = tpf.flux * masks
+        masked[masked==0] = np.nan
+        med = np.nanmedian(masked,axis=(1,2))
+        std = np.nanstd(masked,axis=(1,2))
+        
+        large = masked < (med + sigma*std)[:,np.newaxis,np.newaxis]
+        masks = masks * large
+        
+    return masks 
+
+def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = .1, Mask_type = 'scene',Guess = True, interp_method = 'linear'):
 	"""
 	Determine the sky background of the real image by using the Scene.
 	This works well for known surces, but wont work for random searches.
@@ -651,15 +663,24 @@ def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = .1,Guess = True):
 		bkg 			array 	Array with shape tpf.flux containing background 
 								flux for each frame. 
 	"""
-	mask = np.ones_like(Scene[0])
-	for s in Scene:
-		mask = mask * (s <= Limit)
+	
+	if Mask_type == 'scene':
+		mask = np.ones_like(Scene[0])
+		for s in Scene:
+			mask = mask * (s <= Limit)
+	elif Mask_type == 'percentile':
+		lims = tpf.flux < np.percentile(tpf.flux,10,axis=(1,2))[:,np.newaxis,np.newaxis]
+		mask = np.nansum(lims,axis=0) > 10
 	if type(Custom_mask) != type(None):
 		print('additional mask')
 		mask = mask * Custom_mask
 	if ~mask.any():
 		err_message = 'All pixels masked with limit = {}, choose a higher threshold.' 
 		raise ValueError(err_message)
+	# sigma clip masks
+	masks = Sig_clip_frames(tpf,mask)
+	mask = np.nansum(masks,axis=0) > 1000
+
 	bkg = np.zeros_like(tpf.flux)
 	x = np.arange(0, mask.shape[1])
 	y = np.arange(0, mask.shape[0])
@@ -675,7 +696,7 @@ def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = .1,Guess = True):
 		newarr = arr[~arr.mask]
 
 		estimate = interpolate.griddata((x1, y1), newarr.ravel(),
-								  (xx, yy),method='linear')
+								  (xx, yy),method=interp_method)
 		if Guess:
 			estimate[np.isnan(estimate)] = np.nanmedian(estimate)
 		bkg[i] = estimate
