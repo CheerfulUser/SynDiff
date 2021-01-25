@@ -255,7 +255,7 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 	if len(result) == 0:
 		raise no_targets_found_message
 	radecs = np.vstack([result['RA_ICRS'], result['DE_ICRS']]).T
-	coords = tpf.wcs.all_world2pix(radecs, 1) ## TODO, is origin supposed to be zero or one?
+	coords = tpf.wcs.all_world2pix(radecs, 0) ## TODO, is origin supposed to be zero or one?
 	Gmag = result['Gmag'].values
 	#Jmag = result['Jmag']
 	ind = (((coords[:,0] >= -10) & (coords[:,1] >= -10)) & 
@@ -280,6 +280,31 @@ def PS1_to_TESS_mag(PS1):
 
 	#t = coeffs[0] * r + coeffs[1] * i #+ coeffs[2] * z + coeffs[3] * y
 	t = i - 0.00206*(g - i)**3 - 0.02370*(g - i)**2 + 0.00573*(g - i) - 0.3078
+	PS1['tmag'] = t
+	return PS1
+
+def mag2flux(mag,zp):
+    f = 10**(2/5*(zp-mag))
+    return f
+
+
+def PS1_to_TESS_mag(PS1):
+	"""
+	https://arxiv.org/pdf/1706.00495.pdf pg.9
+	"""
+	zp = 25
+
+	coeffs = np.array([0.0922,0.1117,0.4755,0.1401,0.1788,-0.0936])
+	g = mag2flux(PS1.gmag.values,zp)
+	r = mag2flux(PS1.rmag.values,zp)
+	i = mag2flux(PS1.imag.values,zp)
+	z = mag2flux(PS1.zmag.values,zp)
+	y = mag2flux(PS1.ymag.values,zp)
+
+	t = (coeffs[0] * g + coeffs[1] * r + coeffs[2] * i 
+		 + coeffs[3] * z + coeffs[4] * y + coeffs[5]*(g-r))
+	t = -2.5*np.log10(t) + 25
+	
 	PS1['tmag'] = t
 	return PS1
 
@@ -309,7 +334,7 @@ def Get_PS1(tpf, magnitude_limit = 18, Offset = 10):
 	if len(result) == 0:
 		raise no_targets_found_message
 	radecs = np.vstack([result['RAJ2000'], result['DEJ2000']]).T
-	coords = tpf.wcs.all_world2pix(radecs, 1) ## TODO, is origin supposed to be zero or one?
+	coords = tpf.wcs.all_world2pix(radecs, 0) ## TODO, is origin supposed to be zero or one?
 	Tessmag = result['tmag'].values
 	#Jmag = result['Jmag']
 	ind = (((coords[:,0] >= -10) & (coords[:,1] >= -10)) & 
@@ -406,7 +431,7 @@ def Unified_catalog(tpf,magnitude_limit=18,offset=10):
 		raise no_targets_found_message
 
 	radecs = np.vstack([result['RAJ2000'], result['DEJ2000']]).T
-	coords = tpf.wcs.all_world2pix(radecs, 1)
+	coords = tpf.wcs.all_world2pix(radecs, 0)
 	result['row'] = coords[:,1]
 	result['col'] = coords[:,0]
 	#Jmag = result['Jmag']
@@ -446,10 +471,12 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='unified',Local=None,Sector = 
 		soures 			array 	Array of simulated TESS images for each Gaia sourcetes
 
 	"""
-	if type(Local) == type(None):
+	if Local is None:
 		tpf = Get_TESS(Ra,Dec,Size,Sector = Sector)
-	else:
+	elif type(Local) == str:
 		tpf = lk.TessTargetPixelFile(Local)
+	elif type(Local) == lk.targetpixelfile.TessTargetPixelFile:
+		tpf = Local
 	# pos returned as column row
 	if Catalog == 'gaia':
 		pos, Tmag = Get_Gaia(tpf,magnitude_limit=Maglim)
@@ -457,12 +484,12 @@ def Catalog_scene(Ra,Dec,Size,Maglim= 19, Catalog='unified',Local=None,Sector = 
 		pos, Tmag = Get_PS1(tpf,magnitude_limit=Maglim)
 	if Catalog == 'unified':
 		result = Unified_catalog(tpf,magnitude_limit=Maglim)
-		col = result.col.values + .5
-		row = result.row.values + .5
+		col = result.col.values 
+		row = result.row.values 
 		Tmag = result.tmag.values
 	else:
-		col = pos[:,0] + .5
-		row = pos[:,1] + .5
+		col = pos[:,0] 
+		row = pos[:,1] 
 		result = [pos,Tmag]
 
 	syndiff = {}

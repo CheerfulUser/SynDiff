@@ -9,6 +9,8 @@ from scipy.signal import savgol_filter
 
 from photutils import DAOStarFinder
 from astropy.stats import sigma_clipped_stats
+from astropy.stats import sigma_clip
+
 
 def pix2coord(x, y, mywcs):
 	"""
@@ -195,12 +197,12 @@ def Plot_centroids(TPF,Shifts, Smoothed, Save = None):
     if type(Save) == str:
         plt.savefig(Save)
 
-def Centroids_DAO(TPF,Median,Plot = False):
+def Centroids_DAO(Flux,Median,TPF=None,Plot = False):
     """
     Calculate the centroid shifts of time series images.
     """
     m = Median.copy()
-    f = TPF.flux.copy()
+    f = Flux#TPF.flux.copy()
     mean, med, std = sigma_clipped_stats(m, sigma=3.0)
     daofind = DAOStarFinder(fwhm=3.0, threshold=5.*std)
     s = daofind(m - med)
