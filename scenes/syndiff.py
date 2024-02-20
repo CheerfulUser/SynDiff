@@ -42,7 +42,9 @@ from scipy.ndimage import  rotate
 
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from copy import deepcopy
 
+from astroquery.vizier import Vizier
 
 
 def Get_PRF(Row,Col,Camera,CCD):
@@ -92,16 +94,16 @@ def Interp_PRF(Row,Col,Camera,CCD, Scale, Method = 'RBS'):
 	pathToMatFile = PACKAGEDIR + '/data/prf/'
 	obj = prf.TessPrf(pathToMatFile)
 	PRF = obj.getPrfAtColRow(Col, Row, 1,Camera,CCD)
-	PRF = np.flipud(rotate(PRF,-90))
+	#PRF = np.flipud(rotate(PRF,-90))
 	norm = np.nansum(PRF)
-	x2 = np.arange(0,PRF.shape[0]-1, 1/Scale)
-	y2 = np.arange(0,PRF.shape[1]-1, 1/Scale)
+	x2 = np.arange(0,PRF.shape[0], 1/Scale)- .5
+	y2 = np.arange(0,PRF.shape[1], 1/Scale)- .5
 
 	x = np.arange(0,PRF.shape[0],1)
 	y = np.arange(0,PRF.shape[1],1)
 
 	if Method == 'griddata':
-		X, Y = np.meshgrid(x,y)
+		X, Y = np.meshgrid(x,y) #- 0.5*scale
 		x=X.ravel()			  #Flat input into 1d vector
 		y=Y.ravel()
 
@@ -203,7 +205,7 @@ def Get_Catalogue(tpf, Catalog = 'gaia'):
 	if tpf.mission == 'TESS':
 		pix_scale = 21.0
 	# We are querying with a diameter as the radius, overfilling by 2x.
-	from astroquery.vizier import Vizier
+	
 	Vizier.ROW_LIMIT = -1
 	if Catalog == 'gaia':
 		catalog = "I/345/gaia2"
@@ -266,26 +268,22 @@ def Get_Gaia(tpf, magnitude_limit = 18, Offset = 10):
 	#Jmag = Jmag[ind]
 	return coords, Tmag
 
+def Get_TIC(tpf):
+	c = SkyCoord(tpf.ra, tpf.dec, frame='icrs', unit='deg')
+	pix_scale = 4.0  # arcseconds / pixel for Kepler, default
+	if tpf.mission == 'TESS':
+		pix_scale = 21.0
+	cols = ['TIC','RAJ2000','DEJ2000','Tmag','e_Tmag']
+	vquery = Vizier(columns=cols,row_limit=-1)
+	result =vquery.query_region(c, catalog=["IV/38/tic"],
+								 radius=Angle(np.max(tpf.shape[1:]) * pix_scale, "arcsec"))
+	result = result['IV/38/tic'].to_pandas()
+	return result
 
-def PS1_to_TESS_mag(PS1):
-	"""
-	https://arxiv.org/pdf/1706.00495.pdf pg.9
-	"""
-	#coeffs = np.array([0.6767,0.9751,0.9773,0.6725])
-	g = PS1.gmag.values
-	r = PS1.rmag.values
-	i = PS1.imag.values
-	#z = PS1.zmag.values
-	#y = PS1.ymag.values
-
-	#t = coeffs[0] * r + coeffs[1] * i #+ coeffs[2] * z + coeffs[3] * y
-	t = i - 0.00206*(g - i)**3 - 0.02370*(g - i)**2 + 0.00573*(g - i) - 0.3078
-	PS1['tmag'] = t
-	return PS1
 
 def mag2flux(mag,zp):
-    f = 10**(2/5*(zp-mag))
-    return f
+	f = 10**(2/5*(zp-mag))
+	return f
 
 
 def PS1_to_TESS_mag(PS1):
@@ -301,9 +299,16 @@ def PS1_to_TESS_mag(PS1):
 	z = mag2flux(PS1.zmag.values,zp)
 	y = mag2flux(PS1.ymag.values,zp)
 
-	t = (coeffs[0] * g + coeffs[1] * r + coeffs[2] * i 
-		 + coeffs[3] * z + coeffs[4] * y + coeffs[5]*(g-r))
-	t = -2.5*np.log10(t) + 25
+	cg = 0
+	cr = 0.23482658
+	ci = 0.35265516
+	cz = 0.27569384
+	cy = 0.13800082
+	cp = 0.00067772
+	fit = ((cg*g + cr*r + ci*i + 
+			cz*z + cy*y)*(g/i)**cp)
+
+	t = -2.5*np.log10(fit) + 25
 	
 	PS1['tmag'] = t
 	return PS1
@@ -345,7 +350,8 @@ def Get_PS1(tpf, magnitude_limit = 18, Offset = 10):
 	return coords, Tessmag
 
 
-def Unified_catalog(tpf,magnitude_limit=18,offset=10):
+def Unified_catalog(tpf,magnitude_limit=18,offset=10,
+					Gaia_phot=True,Gaia_dist=True,TIC=True):
 	"""
 	Find all sources present in the TESS field from PS!, and Gaia. Catalogs are cross
 	matched through distance, and Gaia distances are assigned from Gaia ID.
@@ -415,18 +421,44 @@ def Unified_catalog(tpf,magnitude_limit=18,offset=10):
 		result = result.append(df,ignore_index=True)
 
 	# Find matches from the distance catalog and add them in
-	s = np.zeros((len(gaiadist),len(result)))
-	s = s + gaiadist.Source.values[:,np.newaxis]
-	s = s - result.gaiaid.values[np.newaxis,:]
-	ind = np.where(s == 0)[1]
+	if Gaia_dist:
+		s = np.zeros((len(gaiadist),len(result)))
+		s = s + gaiadist.Source.values[:,np.newaxis]
+		s = s - result.gaiaid.values[np.newaxis,:]
+		ind = np.where(s == 0)[1]
 
-	result.gaiadist.iloc[ind] = gaiadist.rest
-	result.gaiadist_u.iloc[ind] = gaiadist.B_rest
-	result.gaiadist_l.iloc[ind] = gaiadist.b_rest
-	
-	result = result.iloc[result.tmag.values < magnitude_limit]
-	no_targets_found_message = ValueError('Either no sources were found in the query region '
-										  'or Vizier is unavailable')
+		result.gaiadist.iloc[ind] = gaiadist.rest
+		result.gaiadist_u.iloc[ind] = gaiadist.B_rest
+		result.gaiadist_l.iloc[ind] = gaiadist.b_rest
+		
+		result = result.iloc[result.tmag.values < magnitude_limit]
+		no_targets_found_message = ValueError('Either no sources were found in the query region '
+											  'or Vizier is unavailable')
+	if TIC:
+		result['Tmag_tic'] = np.nan
+		result['eTmag_tic'] = np.nan
+		tic = Get_TIC(tpf)
+		dra = np.zeros((len(tic),len(result)))
+		dra = dra + tic.RAJ2000.values[:,np.newaxis]
+		dra = dra - result.RAJ2000.values[np.newaxis,:]
+
+		dde = np.zeros((len(tic),len(result)))
+		dde = dde + tic.DEJ2000.values[:,np.newaxis]
+		dde = dde - result.DEJ2000.values[np.newaxis,:]
+		# Calculate distance
+		dist = np.sqrt(dde**2 + dra**2)
+		ind = np.argmin(dist,axis=1)
+
+		far = dist <= (1/60**2) * 1 # difference smaller than 1 arcsec
+		# Get index of all valid matches and add the Gaia info
+		indo = np.nansum(far,axis=1) > 0
+		ind = ind[indo]
+
+		result['Tmag_tic'].iloc[ind] = tic['Tmag'].iloc[indo]
+		result['eTmag_tic'].iloc[ind] = tic['e_Tmag'].iloc[indo]
+
+
+
 	if len(result) == 0:
 		raise no_targets_found_message
 
@@ -656,23 +688,23 @@ def Add_convolved_sources(Row, Col, Optics,Template):
 	return Template
 
 def Sig_clip_frames(tpf,mask,sigma=3,itters=5):
-    masks = np.zeros_like(tpf.flux) + mask[np.newaxis,:,:]
-    
-    for i in range(itters):
-        masked = tpf.flux * masks
-        masked[masked==0] = np.nan
-        med = np.nanmedian(masked,axis=(1,2))
-        std = np.nanstd(masked,axis=(1,2))
-        
-        large = masked < (med + sigma*std)[:,np.newaxis,np.newaxis]
-        masks = masks * large
-        
-    return masks 
+	masks = np.zeros_like(tpf.flux) + mask[np.newaxis,:,:]
+	
+	for i in range(itters):
+		masked = tpf.flux * masks
+		masked[masked==0] = np.nan
+		med = np.nanmedian(masked,axis=(1,2))
+		std = np.nanstd(masked,axis=(1,2))
+		
+		large = masked < (med + sigma*std)[:,np.newaxis,np.newaxis]
+		masks = masks * large
+		
+	return masks 
 
 def Scene_bkg_estimate(Scene,tpf,Custom_mask = None,Limit = .1, Mask_type = 'scene',Guess = True, interp_method = 'linear'):
 	"""
 	Determine the sky background of the real image by using the Scene.
-	This works well for known surces, but wont work for random searches.
+	This works well for known sources, but wont work for random searches.
 	Finds all sky pixels based off 'Limit' then interpolates the sky background 
 	for the sources and masked areas. Workes well for large areas.
 
@@ -849,6 +881,40 @@ def PS_nonan(PS):
 	PS_finite = np.copy(PS)
 	PS_finite[np.isnan(PS)] = 0
 	return PS_finite
+
+
+def Convolve_PS1(ps1,tpf,corners=None):
+	"""
+	Convolve the PS1 image with the DAVE TESS PRF models.
+	If corners are given the PRF will be oriented with the ps1 image
+	"""
+	
+	#PRF = sd.Get_PRF(tpf.row + (12/2), tpf.column + (12/2),
+	#		  tpf.camera,tpf.ccd)
+	PRF = Interp_PRF(tpf.row + (12/2), tpf.column + (12/2),
+						  tpf.camera,tpf.ccd,100)
+	if corners is not None:
+		x = corners[0,0,1] - corners[0,0,0]
+		y = corners[1,0,1] - corners[1,0,0]
+		ang = np.arctan(x/y)*180/np.pi
+		
+		PRF = rotate(PRF.T,ang)#np.fliplr(PRF),ang)
+		
+	conv = deepcopy(ps1)
+	for key in list(ps1.keys())[:-1]:
+		conv[key] = signal.fftconvolve(ps1[key], PRF, mode='same')
+	return conv
+
+def Regrid_PS1(ps1,corners):
+	"""
+	dowsamples the ps1 dictionary to tess resolution
+	"""
+	grid = deepcopy(ps1)
+	for key in list(ps1.keys())[:-1]:
+		down = Regrid_PS(ps1[key],corners).T
+		down[down<=0] = 0
+		grid[key] = down
+	return grid
 
 def Run_convolution(Path,Sector,Camera,CCD,PSsize=1000,Downsamp=False,Plot=False):
 	"""

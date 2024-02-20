@@ -1,14 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import interpolate
-from schwimmbad import MultiPool
+#from schwimmbad import MultiPool
+from joblib import Parallel, delayed
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import matplotlib.path as pat
+from copy import deepcopy
+from PS_image_download import *
 
 from astropy.stats import SigmaClip
+
 # from photutils import Background2D
 
 #from test_convolution import *
@@ -18,36 +22,21 @@ from scipy.ndimage import  rotate
 from astropy.visualization import (SqrtStretch, ImageNormalize)
 
 def Get_TESS_corners(TESS,PS1_wcs):
-    x,y = TESS.flux.shape[1:]
+    y,x = TESS.flux.shape[1:]
     # include the top corners for the last pixels
     x += 1; y += 1
 
     corners = np.zeros((2,x,y))
     ps_corners = np.zeros((2,x,y))
-    x_arr = np.arange(0,x)
-    y_arr = np.arange(0,y)
+    x_arr = np.arange(0,x) - 0.5 # offset from the pixel centers 
+    y_arr = np.arange(0,y) - 0.5 # offset from the pixel centers 
 
     for i in range(x):
         for j in range(y):
-            corners[:,i,j] = pix2coord(x_arr[i]-0.5,y_arr[j]-0.5,TESS.wcs)
+            corners[:,i,j] = pix2coord(x_arr[i],y_arr[j],TESS.wcs) # why is this offset by 1????
             ps_corners[:,i,j] = coord2pix(corners[0,i,j],corners[1,i,j],PS1_wcs)
             
     return ps_corners
-
-def Get_PS1(RA, DEC,Size, filt='i'):
-    '''
-    Size limit seems to be around 1000
-    '''
-    size = Size * 150 # last term is a fudge factor 
-    fitsurl = geturl(RA,DEC, size=size, filters=filt, format="fits")
-    if len(fitsurl) > 0:
-        fh = fits.open(fitsurl[0])
-        ps = fh[0].data
-        ps_wcs = WCS(fh[0])
-        return ps, ps_wcs
-    else:
-        raise ValueError("No PS1 images at for this coordinate") 
-        return 
     
     
 def ps2tessCts(ra, dec, size):
@@ -103,7 +92,7 @@ def Footprint_square(Corners, Points):
     points = Points[contained] 
     return points
     
-def Pix_sum(Square):
+def Pix_sum(Square,squares,pspixels,psimage):
     arr = np.zeros_like(squares)
     contained = squares[Square].contains_points(pspixels)
     if contained.any():
@@ -112,12 +101,37 @@ def Pix_sum(Square):
         arr[Square] = summed
     return arr
 
-def Regrid_PS(PS1, Corners):
+
+def PS1_tess_comp(ps1):
+    cg = 0
+    cr = 0.23482658
+    ci = 0.35265516
+    cz = 0.27569384
+    cy = 0.13800082
+    cp = 0.00067772
+    fit = ((cg*ps1['g'] + cr*ps1['r'] + ci*ps1['i'] + 
+            cz*ps1['z'] + cy*ps1['y'])*(ps1['g']/ps1['i'])**cp)
+    fit[~np.isfinite(fit)] = 0
+    return fit 
+
+def PS1_tess_frac(ps1):
+    fr = 0.6767
+    fi = 0.9751
+    fz = 0.9773
+    fy = 0.6725
+    
+    comp = fr*ps1['r'] + fi*ps1['i'] + fz*ps1['z'] + fy*ps1['y']
+    return comp
+
+def test_global():
+    print(pspixels)
+    print(squares)
+
+def Regrid_PS(PS1, Corners,cores=7):
     dim1, dim2 = Corners.shape[1:]
     dim1 -= 1; dim2 -= 1
-    global px, py
     px, py = np.where(PS1)
-    global squares
+
     squares = np.array(Make_squares(Corners))
     square_num = np.arange(0,len(squares))
 
@@ -125,21 +139,56 @@ def Regrid_PS(PS1, Corners):
     points[:,0] = px
     points[:,1] = py
 
-    global pspixels
     pspixels = Footprint_square(Corners, points)
 
-    global psimage
     psimage = PS1.copy()
     
-    pool = MultiPool()
-    values = list(pool.map(Pix_sum, square_num))
-    pool.close()
+    values = Parallel(n_jobs=cores)(delayed(Pix_sum)(sq,squares,pspixels,psimage) for sq in square_num)
 
     PS_scene = np.array(values)
     PS_scene = np.nansum(PS_scene,axis=0)
     PS_scene = PS_scene.astype('float')
     PS_scene = PS_scene.reshape(dim1,dim2)
     return PS_scene
+
+
+def Get_PS1(RA, DEC,Size, filt='i'):
+    '''
+    Size limit seems to be around 1000
+    '''
+    if Size > 30:
+        raise ValueError('Thats too big man')
+    Scale = 100
+    size = Size * Scale#int((Size + 2*np.sqrt(1/2)*Size) * Scale ) # last term is a fudge factor 
+    fitsurl = geturl(RA,DEC, size=size, filters=filt, format="fits")
+    if len(fitsurl) > 0:
+        fh = fits.open(fitsurl[0])
+        return fh[0]
+    else:
+        raise ValueError("No PS1 images at for this coordinate") 
+        return 
+    
+def PS1_images(RA, DEC,Size,filt):
+    """
+    Grab all PS1 images and make a dictionary, size is in terms of TESS pixels, 100 less than actual.
+    """
+    images = {}
+    for f in filt:
+        im = Get_PS1(RA, DEC,Size,f)
+        ima = im.data 
+        m = -2.5*np.log10(ima) + 25 + 2.5*np.log10(im.header['EXPTIME'])
+        flux = 10**(-2/5*(m-25))
+        flux[~np.isfinite(flux)] = 0
+        #ima[~np.isfinite(ima) | (ima < 0)] = 0
+        images[f] = flux
+        #images['exp' + f] = im.header['EXPTIME']
+    images['tess']  = PS1_tess_comp(images)
+        
+    images['wcs'] = WCS(im)
+    
+    return images
+
+
 
 def Photutils_background(Flux):
     """

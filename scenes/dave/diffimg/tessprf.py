@@ -275,8 +275,8 @@ class TessPrf(AbstractPrfLookup):
         nColOut /= float(gridSize)
         nRowOut /= float(gridSize)
 
-        iCol = colOffset + (np.arange(nColOut) * gridSize).astype(np.int)
-        iRow = rowOffset + (np.arange(nRowOut) * gridSize).astype(np.int)
+        iCol = colOffset + (np.arange(nColOut) * gridSize).astype(int)
+        iRow = rowOffset + (np.arange(nRowOut) * gridSize).astype(int)
 
         if np.max(iCol) == 117:
             debug()

@@ -1,5 +1,5 @@
 import numpy as np
-from photutils import centroid_com
+from photutils.centroids import centroid_com
 from scipy.ndimage import shift
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
@@ -16,14 +16,14 @@ def pix2coord(x, y, mywcs):
 	"""
 	Calculates RA and DEC from the pixel coordinates
 	"""
-	wx, wy = mywcs.all_pix2world(x, y, 1)
+	wx, wy = mywcs.all_pix2world(x, y, 0)
 	return np.array([float(wx), float(wy)])
 
 def coord2pix(x, y, mywcs):
 	"""
 	Calculates RA and DEC from the pixel coordinates
 	"""
-	wx, wy = mywcs.all_world2pix(x, y, 1)
+	wx, wy = mywcs.all_world2pix(x, y, 0)
 	return np.array([float(wx), float(wy)])
 
 def Gaussian2D(Size, FWHM = 130, Center=None):
