@@ -1,0 +1,9 @@
+# Class for interpolating 
+import numpy as np
+import sys
+sys.path
+sys.path.append('./dave/diffimg/')
+import tessprf as prf
+from scipy import interpolate
+
+class 
