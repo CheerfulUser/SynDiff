@@ -1,0 +1,40 @@
+asciitree==0.3.3
+astropy==6.0.1
+astropy-iers-data @ file:///home/conda/feedstock_root/build_artifacts/astropy-iers-data_1724648579656/work
+astropy_healpix==1.0.3
+billiard==4.2.0
+cdshealpix==0.6.5
+certifi @ file:///home/conda/feedstock_root/build_artifacts/certifi_1720457958366/work/certifi
+click==8.1.7
+cloudpickle==3.0.0
+contourpy @ file:///home/conda/feedstock_root/build_artifacts/contourpy_1712429918028/work
+cycler @ file:///home/conda/feedstock_root/build_artifacts/cycler_1696677705766/work
+dask==2024.8.1
+fasteners==0.19
+fonttools @ file:///home/conda/feedstock_root/build_artifacts/fonttools_1720359030700/work
+fsspec==2024.6.1
+healpy @ file:///home/conda/feedstock_root/build_artifacts/healpy_1721652675897/work
+importlib_metadata @ file:///home/conda/feedstock_root/build_artifacts/importlib-metadata_1724187233579/work
+kiwisolver @ file:///home/conda/feedstock_root/build_artifacts/kiwisolver_1695379925569/work
+locket==1.0.0
+matplotlib==3.9.2
+mocpy==0.16.2
+munkres==1.1.4
+networkx==3.3
+numcodecs==0.13.0
+numpy==1.26.4
+packaging @ file:///home/conda/feedstock_root/build_artifacts/packaging_1718189413536/work
+partd==1.4.2
+pillow @ file:///home/conda/feedstock_root/build_artifacts/pillow_1719903548521/work
+pyerfa @ file:///home/conda/feedstock_root/build_artifacts/pyerfa_1715855162502/work
+pyparsing @ file:///home/conda/feedstock_root/build_artifacts/pyparsing_1724616129934/work
+python-dateutil==2.9.0.post0
+PyYAML @ file:///home/conda/feedstock_root/build_artifacts/pyyaml_1723018220704/work
+reproject==0.14.0
+scipy @ file:///home/conda/feedstock_root/build_artifacts/scipy-split_1724327061663/work/dist/scipy-1.14.1-cp312-cp312-linux_x86_64.whl#sha256=273d4a0dca8845537bb3b7a02f60b5c84296e444f352aff32292ded3941d0b0f
+setuptools==72.1.0
+six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
+toolz==0.12.1
+wheel==0.43.0
+zarr==2.18.2
+zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1723591248676/work
