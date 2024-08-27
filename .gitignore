@@ -48,6 +48,8 @@ Thumbs.db
 *.jpg
 *.mp4
 *.fits
+!./development/PS1_to_TESS/data/ds9.fits
+
 
 # Checkpoints #
 .ipynb_checkpoints/
