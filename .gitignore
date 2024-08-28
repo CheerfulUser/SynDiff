@@ -20,7 +20,7 @@
 *.rar
 *.tar
 *.zip
-*.csv
+#*.csv
 
 # Logs and databases #
 ######################
@@ -48,6 +48,10 @@ Thumbs.db
 *.jpg
 *.mp4
 *.fits
+
+# Exception for PS1 to TESS notebook. Feel free to remove...
+!ds9.fits
+!tess2019359002923-s0020-1-1-0165-s_ffic.fits
 
 # Checkpoints #
 .ipynb_checkpoints/
