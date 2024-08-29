@@ -47,7 +47,7 @@ Thumbs.db
 *.pdf
 *.jpg
 *.mp4
-*.fits
+#*.fits
 
 # Exception for PS1 to TESS notebook. Feel free to remove...
 !ds9.fits
