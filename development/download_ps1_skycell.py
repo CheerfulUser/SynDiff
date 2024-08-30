@@ -6,8 +6,9 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 import requests
 import os
+import numpy as np
 
-def getimages(ra,dec,filters="grizy"):
+def getimages(ra,dec,filters="grizy", domask = False):
     
     """Query ps1filenames.py service to get a list of images
     
@@ -18,7 +19,10 @@ def getimages(ra,dec,filters="grizy"):
     """
     
     service = "https://ps1images.stsci.edu/cgi-bin/ps1filenames.py"
-    url = f"{service}?ra={ra}&dec={dec}&filters={filters}"
+    if domask:
+        url = f"{service}?ra={ra}&dec={dec}&filters={filters}&type=stack.mask"
+    else:
+        url = f"{service}?ra={ra}&dec={dec}&filters={filters}"
     table = Table.read(url, format='ascii')
     return table
 
@@ -108,8 +112,8 @@ def getgrayim(ra, dec, size=240, output_size=None, filter="g", format="jpg"):
     return im
 
 
-def get_img_lc(ra, dec, fname_list = [],home_dir = './'):
-    image_list = getimages(ra, dec)
+def get_img_lc(ra, dec, fname_list = [],home_dir = './', domask = False):
+    image_list = getimages(ra, dec, domask = domask)
     image_list = image_list[image_list['filter']!='g']
     fnames = []
 #    return image_list['filename']
@@ -129,12 +133,14 @@ def get_img_lc(ra, dec, fname_list = [],home_dir = './'):
     fname_list = fname_list + fnames
     return fname_list
 
-def bulk_download(rac, decc, radius, home_dir = './'):
+def bulk_download(rac, decc, radius, home_dir = './', domask = True):
     outfiles = []
     for dec in np.arange(decc-radius+0.001, decc+radius+0.2, 0.2):
         r4ra = np.sqrt(radius**2-(decc-dec)**2)
         for ra in np.arange(rac-r4ra/np.cos(dec/180*np.pi), 
                             rac+(r4ra+0.19)/np.cos(dec/180*np.pi),
                             0.2/np.cos(dec/180*np.pi)):
-            outfiles = get_img_lc(ra, dec,fname_list = outfiles, home_dir = home_dir)
+            outfiles = get_img_lc(ra, dec,fname_list = outfiles, home_dir = home_dir, domask = domask)
     return outfiles
+    
+    
