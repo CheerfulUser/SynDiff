@@ -1,6 +1,32 @@
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize 
+from copy import deepcopy
+from glob import glob
+import os
+
+def catmag_to_imscale(flux,header):
+    a = 2.5/np.log(10)
+    tmp = (flux - header['boffset']) / (header['bsoften']*2)
+    tmp = np.arcsinh(tmp)*a
+    return tmp
+
+def download_skycells(names,path,filters=['r','i','z','y'],overwrite=False,mask=False):
+    for name in names:
+        for band in filters:
+            if mask:
+                filename = f'rings.v3.{name}.stk.{band}.unconv.mask.fits'
+            else:
+                filename = f'rings.v3.{name}.stk.{band}.unconv.fits'
+            exist = glob(path + filename)
+            if (len(exist) == 0) | overwrite:
+                _,projection,cell = name.split('.')
+                base = 'wget http://ps1images.stsci.edu//rings.v3.skycell/'
+                call = base + f'{projection}/{cell}/{filename} -P {path}'
+                os.system(call)
+            else:
+                pass
+                #print(f'{filename} already exists.')
 
 
 def isolate_stars(cat,only_stars=False,Qf_lim=0.85,psfkron_diff=0.05):
@@ -64,6 +90,6 @@ def psf_phot(f,cut,psf):
 
 def mask_rad_func(x, a=7.47132813e+03, b=5.14848986e-01, c=3.15022393e+01):
     rad = np.array(a * np.exp(-b * x) + c)
-    rad[rad>300] = 300
+    rad[rad>1000] = 1000
     rad = rad.astype(int)
     return rad

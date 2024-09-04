@@ -13,21 +13,23 @@ from scipy.signal import fftconvolve
 from astropy.stats import sigma_clipped_stats
 import os
 
+from ps1_data_handler import ps1_data
+from tools import download_skycells, catmag_to_imscale
 
 
 class pad_skycell():
-    def __init__(self,file,skycells,datapath,pad=500,
+    def __init__(self,ps1,skycells,datapath,pad=500,
                  catalog=None,psf_std=2.5,run=True,download=True,
                  plot=False):
-        self.file = file
+        self.ps1 = ps1
         self.datapath = datapath 
         self.pad = pad
         self.skycells = skycells
         self._check_download = download
-        self.cat = catalog
+        self.ps1.get_catalog(catalog)
         self.psf_std = psf_std
         
-        self._load_image()
+        self._load_ps1()
         
         # set by ps1
         self.overlap = 240 * 2 # overlap pixels
@@ -39,20 +41,10 @@ class pad_skycell():
                 self.plot_image()
         
         
-    def _load_image(self):
-        hdul = fits.open(self.file)
-        if len(hdul) == 1:
-            j = 0 
-        else:
-            j = 1
-        self.data = hdul[j].data
-        self.header = hdul[j].header
-        self.wcs = WCS(hdul[j].header)
-        hdul.close()
-        self.im_skycell = int(self.file.split('skycell.')[-1].split('.')[0])
-        self.band = self.file.split('stk.')[-1].split('.')[0]
-        self.padded = np.pad(self.data,self.pad)
-        self.zp = 25 + 2.5*np.log10(self.header['EXPTIME'])
+    def _load_ps1(self):
+        if type(self.ps1) == str:
+            self.ps1 = ps1_data(self.ps1,mask=False,toflux=False)
+        self.ps1.set_padding(self.pad)
     
     def run(self):
         self._ovsersize_points()
@@ -62,11 +54,12 @@ class pad_skycell():
         self._pad_sides()
         self._pad_corners()
         self._cat_fill()
+        self.padded = self.ps1.padded
         
     
     def _ovsersize_points(self):
         pad = self.pad
-        pc_y,pc_x = self.wcs.array_shape 
+        pc_y,pc_x = self.ps1.wcs.array_shape 
         pc_y /= 2; pc_x /= 2
 
         oversize_points = np.array([[-pad, pc_y], # clockwise from left side
@@ -79,14 +72,14 @@ class pad_skycell():
                                     [2*pc_x+pad, 2*pc_y+pad],
                                     [2*pc_x+pad, -pad]])
         
-        oversized_edges = self.wcs.all_pix2world(oversize_points,0)
-        oversized_corners = self.wcs.all_pix2world(oversize_corners,0)
+        oversized_edges = self.ps1.wcs.all_pix2world(oversize_points,0)
+        oversized_corners = self.ps1.wcs.all_pix2world(oversize_corners,0)
         self.oversized_edges = oversized_edges
         self.oversized_corners = oversized_corners
         
     def _check_skycells(self):
-        f = np.array([int(a.split('.')[1]) for a in skycells['Name'].values])
-        ind = f == self.im_skycell
+        f = np.array([int(a.split('.')[1]) for a in self.skycells['Name'].values])
+        ind = f == self.ps1.im_skycell
         self.skycells = self.skycells.iloc[ind]
         
         
@@ -128,8 +121,8 @@ class pad_skycell():
         self.side_cells = side_cells
         self.corner_cells = corner_cells
         if self._check_download:
-            download_skycells(self.skycells['Name'].values[side_cells[0]],path=self.datapath,filters=[self.band])
-            download_skycells(self.skycells['Name'].values[corner_cells[0]],path=self.datapath,filters=[self.band])
+            download_skycells(self.skycells['Name'].values[side_cells[0]],path=self.datapath,filters=[self.ps1.band])
+            download_skycells(self.skycells['Name'].values[corner_cells[0]],path=self.datapath,filters=[self.ps1.band])
         
     
     def _pad_sides(self):
@@ -139,7 +132,7 @@ class pad_skycell():
         for i in range(len(side_cells[0])):
             name = self.skycells.iloc[side_cells[0]].Name.values[i]
             side = side_cells[1][i]
-            filename = f'rings.v3.{name}.stk.{self.band}.unconv.fits'
+            filename = f'rings.v3.{name}.stk.{self.ps1.band}.unconv.fits'
             hdul = fits.open(self.datapath + filename)
             if len(hdul) == 1:
                 j = 0 
@@ -148,13 +141,13 @@ class pad_skycell():
             buff = hdul[j].data
 
             if side == 0:
-                self.padded[pad:-pad,:pad+10] = buff[:,-(pad+overlap):-overlap+10]
+                self.ps1.padded[pad:-pad,:pad+10] = buff[:,-(pad+overlap):-overlap+10]
             elif side == 1:
-                self.padded[-(pad+10):,pad:-pad] = buff[overlap-10:(pad+overlap),:]
+                self.ps1.padded[-(pad+10):,pad:-pad] = buff[overlap-10:(pad+overlap),:]
             elif side == 2:
-                self.padded[pad:-pad,-(pad+10):] = buff[:,overlap-10:(pad+overlap)]
+                self.ps1.padded[pad:-pad,-(pad+10):] = buff[:,overlap-10:(pad+overlap)]
             elif side == 3:
-                self.padded[:pad+10,pad:-pad] = buff[-(pad+overlap):-overlap+10,:]
+                self.ps1.padded[:pad+10,pad:-pad] = buff[-(pad+overlap):-overlap+10,:]
         
     def _pad_corners(self):
         corner_cells = self.corner_cells
@@ -163,7 +156,7 @@ class pad_skycell():
         for i in range(len(corner_cells[0])):
             name = self.skycells.iloc[corner_cells[0]].Name.values[i]
             corner = corner_cells[1][i]
-            filename = f'rings.v3.{name}.stk.{self.band}.unconv.fits'
+            filename = f'rings.v3.{name}.stk.{self.ps1.band}.unconv.fits'
             hdul = fits.open(self.datapath + filename)
             if len(hdul) == 1:
                 j = 0 
@@ -171,13 +164,13 @@ class pad_skycell():
                 j = 1
             buff = hdul[j].data
             if corner == 0:
-                self.padded[:(pad+10),:(pad+10)] = buff[-(pad+overlap):-overlap+10,-(pad+overlap):-overlap+10]
+                self.ps1.padded[:(pad+10),:(pad+10)] = buff[-(pad+overlap):-overlap+10,-(pad+overlap):-overlap+10]
             elif corner == 1:
-                self.padded[-(pad+10):,:(pad+10)] = buff[overlap-10:(pad+overlap),-(pad+overlap):-overlap+10]
+                self.ps1.padded[-(pad+10):,:(pad+10)] = buff[overlap-10:(pad+overlap),-(pad+overlap):-overlap+10]
             elif corner == 2:
-                self.padded[-(pad+10):,-(pad+10):] = buff[overlap-10:(pad+overlap),overlap-10:(pad+overlap)]
+                self.ps1.padded[-(pad+10):,-(pad+10):] = buff[overlap-10:(pad+overlap),overlap-10:(pad+overlap)]
             elif corner == 3:
-                self.padded[:pad+10,-pad-10:] = buff[-(pad+overlap):-overlap+10,overlap-10:(pad+overlap)]
+                self.ps1.padded[:pad+10,-pad-10:] = buff[-(pad+overlap):-overlap+10,overlap-10:(pad+overlap)]
     
     def _cat_fill(self):
         sides = []; corners = []
@@ -191,36 +184,35 @@ class pad_skycell():
             corners = np.array(list(corners - done))
         
         if (len(sides) > 0) & (len(corners) > 0):
-            if self.cat is not None:
-                cat = self.cat
-                x,y = self.wcs.all_world2pix(cat['raMean'].values,cat['decMean'].values,0)
+            if self.ps1.cat is not None:
+                cat = self.ps1.cat
+                x,y = self.ps1.wcs.all_world2pix(cat['raMean'].values,cat['decMean'].values,0)
                 x += self.pad; y += self.pad
                 cat['x'] = x.astype(int); cat['y'] = y.astype(int)
-                ind = (x > 0) & (y > 0) & (x < self.padded.shape[1]) & (y < self.padded.shape[0])
+                ind = (x > 0) & (y > 0) & (x < self.ps1.padded.shape[1]) & (y < self.ps1.padded.shape[0])
                 cat = cat.iloc[ind]
-                cat_image = np.zeros_like(self.padded)
+                cat_image = np.zeros_like(self.ps1.padded)
                 ind_image = self._catpad_index(sides,corners)
                 ind = ind_image[cat['y'].values,cat['x'].values] == 1
                 cat = cat.iloc[ind]
-                self.cat = cat
-                #cat_image[cat['y'].values,cat['x'].values] = catmag_to_imscale(cat[f'{self.band}MeanPSFMag'].values,self.header)
-                cat_image[cat['y'].values,cat['x'].values] = 10**((cat[f'{self.band}MeanPSFMag'].values-self.zp)/-2.5)
+                self.ps1.cat = cat
+                #cat_image[cat['y'].values,cat['x'].values] = catmag_to_imscale(cat[f'{self.ps1.band}MeanPSFMag'].values,self.ps1.header)
+                cat_image[cat['y'].values,cat['x'].values] = 10**((cat[f'{self.ps1.band}MeanPSFMag'].values-self.ps1.zp)/-2.5)
                 g = Gaussian2D(x_stddev=self.psf_std,y_stddev=self.psf_std,x_mean=10,y_mean=10)
                 y,x = np.mgrid[:21,:21]
                 psf = g(x,y)
                 psf /= np.nansum(psf)
                 cat_image = fftconvolve(cat_image, psf, mode='same')
-                cat_image = catmag_to_imscale(cat_image,self.header)
-                m,med,std = sigma_clipped_stats(self.data)
-                self.cat_image = cat_image
+                cat_image = catmag_to_imscale(cat_image,self.ps1.header)
+                self.ps1.cat_image = cat_image
                 self.ind_image = ind_image
-                self.padded[ind_image > 0] = cat_image[ind_image > 0] + med
+                self.ps1.padded[ind_image > 0] = cat_image[ind_image > 0] + self.ps1.image_stats[1]
             else:
                 print('No catalog provided!')
             
     def _catpad_index(self,sides,corners):
         pad = self.pad
-        catpad = np.zeros_like(self.padded)
+        catpad = np.zeros_like(self.ps1.padded)
         for side in sides:
             if side == 0:
                 catpad[pad:-pad,:pad+10] = 1
@@ -243,7 +235,7 @@ class pad_skycell():
         return catpad
     
     def plot_cells(self):
-        path = Path(self.wcs.calc_footprint())
+        path = Path(self.ps1.wcs.calc_footprint())
         plt.figure()
         colours = ['C0','C1','C2','C3']
         for p,c in zip(self.oversized_corners,colours):
@@ -296,15 +288,15 @@ class pad_skycell():
     def plot_image(self):
         pad = self.pad
         pixel_path = np.array([[pad,pad],
-                               [self.data.shape[0]+pad,pad],
-                               [self.data.shape[0]+pad,self.data.shape[1]+pad],
-                               [pad,self.data.shape[1]+pad]])
+                               [self.ps1.data.shape[0]+pad,pad],
+                               [self.ps1.data.shape[0]+pad,self.ps1.data.shape[1]+pad],
+                               [pad,self.ps1.data.shape[1]+pad]])
         path = Path(pixel_path)
         
-        vmin = np.nanpercentile(self.padded,16)
-        vmax = np.nanpercentile(self.padded,90)
+        vmin = np.nanpercentile(self.ps1.padded,16)
+        vmax = np.nanpercentile(self.ps1.padded,90)
         plt.figure()
-        plt.imshow(self.padded,vmin=vmin,vmax=vmax,origin='lower')
+        plt.imshow(self.ps1.padded,vmin=vmin,vmax=vmax,origin='lower')
         codes = [
                 Path.MOVETO,
                 Path.LINETO,
@@ -321,22 +313,3 @@ class pad_skycell():
 
     
 
-def catmag_to_imscale(flux,header):
-    a = 2.5/np.log(10)
-    tmp = (flux - header['boffset']) / (header['bsoften']*2)
-    tmp = np.arcsinh(tmp)*a
-    return tmp
-
-def download_skycells(names,path,filters=['r','i','z','y'],overwrite=False):
-    for name in names:
-        for band in filters:
-            filename = f'rings.v3.{name}.stk.{band}.unconv.fits'
-            exist = glob(path + filename)
-            if (len(exist) == 0) | overwrite:
-                _,projection,cell = name.split('.')
-                base = 'wget http://ps1images.stsci.edu//rings.v3.skycell/'
-                call = base + f'{projection}/{cell}/{filename} -P {path}'
-                os.system(call)
-            else:
-                pass
-                #print(f'{filename} already exists.')
