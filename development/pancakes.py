@@ -76,8 +76,44 @@ class Pancakes():
         self._image1(self.file1)
         self._check_master_names()
         self._ravelling()
+        self._index_master_file()
         self.name_skycells()
         self._skycelling()
+
+    def _index_master_file(self):
+        full_date =datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%m')
+
+        new_fits_header = deepcopy(self.temp_copy)
+        
+        new_fits_header['DATE-MOD'] = full_date
+        file = os.path.join(self.savepath, self.master_index)
+
+        flattened_indices = np.arange(self.data_shape[0] * self.data_shape[1]).reshape(self.data_shape)
+        new = np.stack((flattened_indices, self._tx, self._ty), axis=-1)
+
+        im1_header = deepcopy(new_fits_header)
+        im1_header['EXTNAME'] = 'Ravelled Pixels'
+        im1_header['XTENSION'] = 'RAVEL'
+        im2_header = deepcopy(new_fits_header)
+        im2_header['EXTNAME'] = 'X Pixels'
+        im2_header['XTENSION'] = 'X'
+        im3_header = deepcopy(new_fits_header)
+        im3_header['EXTNAME'] = 'Y Pixels'
+        im3_header['XTENSION'] = 'Y'
+
+        primary_hdu = fits.PrimaryHDU(header=new_fits_header)
+        image_hdu1 = fits.ImageHDU(data=deepcopy(np.int64(new[:,:,0])), header=im1_header)
+        image_hdu1.scale('int16', bscale=1.0,bzero=32768.0)
+        image_hdu2 = fits.ImageHDU(data=deepcopy(np.int64(new[:,:,1])), header=im2_header)
+        image_hdu2.scale('int16', bscale=1.0,bzero=32768.0)
+        image_hdu3 = fits.ImageHDU(data=deepcopy(np.int64(new[:,:,2])), header=im3_header)
+        image_hdu3.scale('int16', bscale=1.0,bzero=32768.0)
+        hdul = fits.HDUList([primary_hdu, image_hdu1, image_hdu2, image_hdu3])
+
+        hdul.writeto(file, overwrite=True)
+
+        compress = 'gzip -f ' + file
+        os.system(compress)
 
     def _check_master_names(self):
         
@@ -92,13 +128,16 @@ class Pancakes():
         if self.sector != '':
             sector = str(self.sector).zfill(4)
             self.temp_copy['SECTOR'] = sector
-            file_name = self.temp_copy['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_master_pixels2skycells.fits'
+            file_name_master = self.temp_copy['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_master_pixels2skycells.fits'
+            file_name_index = self.temp_copy['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_master_index.fits'
         else:
-            file_name = self.temp_copy['TELESCOP'].strip() + '_' + str(new_ccd) + '_master_pixels2skycells.fits'
+            file_name_master = self.temp_copy['TELESCOP'].strip() + '_' + str(new_ccd) + '_master_pixels2skycells.fits'
+            file_name_index = self.temp_copy['TELESCOP'].strip() + '_' + str(new_ccd) + '_master_index.fits'
 
-        self.master_file = file_name
+        self.master_file = file_name_master
+        self.master_index = file_name_index
 
-        if os.path.exists(os.path.join(self.savepath, file_name)):
+        if os.path.exists(os.path.join(self.savepath, file_name_master)):
             if self.overwrite == False:
                 self.int_skip = True
                 print('Master file already exists. Will skip master file creation...')
@@ -173,10 +212,10 @@ class Pancakes():
 
     def _ravelling(self):
         t_y, t_x = self.data_shape
-        ty, tx = np.mgrid[:t_y, :t_x]
+        self._ty, self._tx = np.mgrid[:t_y, :t_x]
 
-        ty_input = ty.ravel()
-        tx_input = tx.ravel()
+        ty_input = self._ty.ravel()
+        tx_input = self._tx.ravel()
 
         self.tpix_coord_input = np.column_stack([ty_input, tx_input])
 
@@ -467,11 +506,19 @@ class Pancakes():
             file_name = new_fits_header['TELESCOP'].strip() + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
         
         new_fits_header['DATE-MOD'] = full_date
+
+        im1_header = deepcopy(new_fits_header)
+        im1_header['EXTNAME'] = 'X Pixels'
+        im1_header['XTENSION'] = 'X'
+        im2_header = deepcopy(new_fits_header)
+        im2_header['EXTNAME'] = 'Y Pixels'
+        im2_header['XTENSION'] = 'Y'
+
         file = os.path.join(self.savepath, file_name)
         primary_hdu = fits.PrimaryHDU(header=new_fits_header)
-        image_hdu1 = fits.ImageHDU(data=deepcopy(np.int64(fll[:,:,0])), header=new_fits_header)
+        image_hdu1 = fits.ImageHDU(data=deepcopy(np.int64(fll[:,:,0])), header=im1_header)
         image_hdu1.scale('int16', bscale=1.0,bzero=32768.0)
-        image_hdu2 = fits.ImageHDU(data=deepcopy(np.int64(fll[:,:,1])), header=new_fits_header)
+        image_hdu2 = fits.ImageHDU(data=deepcopy(np.int64(fll[:,:,1])), header=im2_header)
         image_hdu2.scale('int16', bscale=1.0,bzero=32768.0)
         hdul = fits.HDUList([primary_hdu, image_hdu1, image_hdu2])
 
