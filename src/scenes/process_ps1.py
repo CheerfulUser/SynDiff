@@ -74,7 +74,7 @@ class combine_ps1():
         self.psf = psfg
 
     def process(self):
-        if self.cores > 1:
+        if (self.cores == 0) | (self.cores== 1):
 
             Parallel(n_jobs=self.cores)(delayed(_parallel_process)(self,f) for f in self.fields)
         else:
@@ -94,7 +94,7 @@ class combine_ps1():
                         for b in bands:
                             f = file + f'{b}.unconv.fits'
                             if b == 'r':
-                                ps1 = ps1_data(f,mask=self.use_mask,catalog=self.catalog_path+'ps1.csv',
+                                ps1 = ps1_data(f,mask=self.use_mask,catalog=self.catalog_path+'_ps1.csv',
                                                toflux=False,pad=self.pad)
                             else:
                                 ps1._load_image(f)
@@ -102,6 +102,7 @@ class combine_ps1():
 
                             pad = pad_skycell(ps1=ps1,skycells=self.skycells,datapath=self.datapath)
                             sat = saturated_stars(deepcopy(pad.ps1))#,catalogpath=self.catalog_path)
+                            sat.ps1.convert_flux_scale(toflux=True)
                             images += [sat.ps1.padded]
                             masks += [sat.ps1.mask]
                             print(f'Done {ps1.band}')
