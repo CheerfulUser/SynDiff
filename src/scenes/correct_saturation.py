@@ -118,8 +118,8 @@ class saturated_stars():
 			bsc = _get_bsc(sc,0.41)
 			#tyco = _get_tyco(sc,0.8)
 		else:
-			gaia = pd.read_csv(catalogpath+'gaia.csv')
-			bsc = pd.read_csv(catalogpath+'bsc.csv')
+			gaia = pd.read_csv(catalogpath+'_gaia.csv')
+			bsc = pd.read_csv(catalogpath+'_bsc.csv')
 			#tyco = pd.read_csv(catalogpath+'tyco.csv')
 		if gaia is not None:
 			x,y = self.ps1.wcs.all_world2pix(gaia.RA_ICRS.values,gaia.DE_ICRS.values,0)
