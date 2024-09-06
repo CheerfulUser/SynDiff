@@ -13,6 +13,8 @@ from scipy.signal import fftconvolve
 from astropy.stats import sigma_clipped_stats
 import os
 
+from copy import deepcopy
+
 from ps1_data_handler import ps1_data
 from tools import download_skycells, catmag_to_imscale
 
@@ -109,14 +111,16 @@ class pad_skycell():
             matched += [p.contains_points(self.oversized_edges)]
         matched = np.array(matched)
         side_cells = np.where(matched) # 0: cell index; 1: side index
-
+        if len(side_cells[0]) == 0:
+            side_cells=([],[])
 
         matched = []
         for p in self.skycell_paths:
             matched += [p.contains_points(self.oversized_corners)]
         matched = np.array(matched)
         corner_cells = np.where(matched) # 0: cell index; 1: corner index
-        
+        if len(corner_cells[0]) == 0:
+            corner_cells=([],[])
         
         self.side_cells = side_cells
         self.corner_cells = corner_cells
@@ -185,7 +189,7 @@ class pad_skycell():
         
         if (len(sides) > 0) & (len(corners) > 0):
             if self.ps1.cat is not None:
-                cat = self.ps1.cat
+                cat = deepcopy(self.ps1.cat)
                 x,y = self.ps1.wcs.all_world2pix(cat['raMean'].values,cat['decMean'].values,0)
                 x += self.pad; y += self.pad
                 cat['x'] = x.astype(int); cat['y'] = y.astype(int)
@@ -195,7 +199,7 @@ class pad_skycell():
                 ind_image = self._catpad_index(sides,corners)
                 ind = ind_image[cat['y'].values,cat['x'].values] == 1
                 cat = cat.iloc[ind]
-                self.ps1.cat = cat
+                #self.ps1.cat = cat
                 #cat_image[cat['y'].values,cat['x'].values] = catmag_to_imscale(cat[f'{self.ps1.band}MeanPSFMag'].values,self.ps1.header)
                 cat_image[cat['y'].values,cat['x'].values] = 10**((cat[f'{self.ps1.band}MeanPSFMag'].values-self.ps1.zp)/-2.5)
                 g = Gaussian2D(x_stddev=self.psf_std,y_stddev=self.psf_std,x_mean=10,y_mean=10)

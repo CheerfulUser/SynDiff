@@ -3,6 +3,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.stats import sigma_clipped_stats
 from tools import query_ps1, download_skycells
+import pandas as pd
 
 class ps1_data():
     def __init__(self,file,mask=False,catalog=None,toflux=True,pad=0):
@@ -17,8 +18,10 @@ class ps1_data():
         if toflux:
             self.data = self.convert_flux_scale()
     
-    def _load_image(self):
-        hdul = fits.open(self.file)
+    def _load_image(self,file=None):
+        if file is None:
+            file = self.file
+        hdul = fits.open(file)
         if len(hdul) == 1:
             j = 0 
         else:
@@ -84,22 +87,22 @@ class ps1_data():
                 log = np.arcsinh(tmp)*a
                 self.padded = log
 
-    def save_image(self,savepath,suffix,overwrite=False):
+    def save_image(self,savepath,savename,overwrite=False):
         self.convert_flux_scale(toflux=False)
         data = self.padded[self.pad:-self.pad,self.pad:-self.pad]
         hdu = fits.PrimaryHDU(data=data,header=self.header)
         hdu.scale('int16', bscale=self._bscale,bzero=self._bzero)
         hdul = fits.HDUList([hdu])
-        savename = savepath + '/' + self.file.split('fits')[0].split('/')[-1] + f'{suffix}.fits'
+        savename = savepath + '/' + savename + '.fits' #self.file.split('fits')[0].split('/')[-1] + f'{suffix}.fits'
         hdul.writeto(savename,overwrite=overwrite)
 
-    def save_mask(self,savepath,suffix,overwrite=False):
+    def save_mask(self,savepath,savename,overwrite=False):
         data = self.mask
         data = data[self.pad:-self.pad,self.pad:-self.pad]
         hdu = fits.PrimaryHDU(data=data,header=self.mask_header)
         hdu.scale('int16', bscale=self._bscale_mask,bzero=self._bzero_mask)
         hdul = fits.HDUList([hdu])
-        savename = savepath + '/' + self.mask_file.split('fits')[0].split('/')[-1] + f'{suffix}.fits'
+        savename = savepath + '/' + savename + '.fits'#self.mask_file.split('fits')[0].split('/')[-1] + f'{suffix}.fits'
         hdul.writeto(savename,overwrite=overwrite)
 
     def set_padding(self,pad):
@@ -114,19 +117,20 @@ class ps1_data():
                 return
         elif catalog is not None:
             if type(catalog) == str:
-                cat = pd.read_csv(catalogpath)
+                cat = pd.read_csv(catalog)
             else:
                 cat = catalog 
         else:
             return
 
         x,y = self.wcs.all_world2pix(cat['raMean'].values,cat['decMean'].values,0)
-        cat['x'] = x + self.pad
-        cat['y'] = y + self.pad
-        ind = (x + self.pad > 0) & (y + self.pad > 0) & (x < self.padded.shape[1] - self.pad) & (y < self.padded.shape[0] - self.pad)
+        x += self.pad; y += self.pad
+        cat['x'] = x
+        cat['y'] = y
+        ind = (x > 0) & (y > 0) & (x < self.padded.shape[1]) & (y < self.padded.shape[0])
         cat = cat.iloc[ind]
         cat = cat.loc[(cat['iMeanPSFMag'] > 0) & (cat['rMeanPSFMag'] > 0) & 
                       (cat['zMeanPSFMag'] > 0) & (cat['yMeanPSFMag'] > 0)]
         cat = cat.sort_values(self.band+'MeanPSFMag')
-
+        cat = cat.drop_duplicates()
         self.cat = cat 
