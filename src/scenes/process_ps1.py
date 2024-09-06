@@ -15,6 +15,8 @@ from correct_saturation_old import saturated_stars_old
 from pad_skycell import pad_skycell
 from ps1_data_handler import ps1_data
 
+from joblib import Parallel, delayed
+
 import warnings
 # nuke warnings because sigma clip is extremely annoying 
 warnings.filterwarnings("ignore")
@@ -24,7 +26,7 @@ warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
 class combine_ps1():
     def __init__(self,datapath,skycells,psf_std=70,combine=[0.238,0.344,0.283,0.135],
                  catalog_path=None,savepath='.',suffix='rizy.conv',
-                 use_mask=True,overwrite=False,pad=500,verbose=0,run=True):
+                 use_mask=True,overwrite=False,pad=500,verbose=0,run=True,cores=5):
         self.datapath = datapath
         self.psf_std = psf_std
         self.combine = np.array(combine)
@@ -36,6 +38,7 @@ class combine_ps1():
         self.pad = pad
         self.verbose = verbose
         self.use_mask = use_mask
+        self.cores = cores
         if run:
             self.run()
         
@@ -69,16 +72,22 @@ class combine_ps1():
         psfg = psfg(x,y)
         psfg /= np.nansum(psfg)
         self.psf = psfg
-        
-    
+
     def process(self):
+        if self.cores > 1:
+
+            Parallel(n_jobs=self.cores)(delayed(_parallel_process)(self,f) for f in self.fields)
+        else:
+            self._process()
+
+    def _process(self):
         for file in self.fields:
                 try:
                     out = self.savepath + file.split('/')[-1] + self.suffix + '.fits'
                     exist = glob(out)
                     if (len(exist) == 0) | self.overwrite:
                         if self.verbose > 0:
-                            print(f'Starting field {file.split('/')[-1].split('.stk')[0]}')
+                            print(f"Starting field {file.split('/')[-1].split('.stk')[0]}")
                         bands = ['r','i','z','y']
                         images = []
                         masks = []
@@ -95,7 +104,7 @@ class combine_ps1():
                             sat = saturated_stars(deepcopy(pad.ps1))#,catalogpath=self.catalog_path)
                             images += [sat.ps1.padded]
                             masks += [sat.ps1.mask]
-                            print(f'Done {b}')
+                            print(f'Done {ps1.band}')
                         self.ps1 = sat.ps1
                         images = np.array(images)
                         masks = np.array(masks,dtype=int)
@@ -108,10 +117,10 @@ class combine_ps1():
                         self.ps1.mask = mask
                         self._update_header()
                         savename = file.split('/')[-1] + f'{self.suffix}'
-                        self.ps1.save_image(savepath,savename,overwrite=self.overwrite)
+                        self.ps1.save_image(self.savepath,savename,overwrite=self.overwrite)
                         print('Saved: ',savename)
                         savename = file.split('/')[-1] + f'{self.suffix}.mask'
-                        self.ps1.save_mask(savepath,savename,overwrite=self.overwrite)
+                        self.ps1.save_mask(self.savepath,savename,overwrite=self.overwrite)
                 except Exception:
                     print(traceback.format_exc())
 
@@ -132,3 +141,46 @@ class combine_ps1():
         header['COMBDATE'] = (date.today().isoformat(),'Date of combination')
         
         self.ps1.header = header
+
+def _parallel_process(combiner,file):
+    try:
+        out = combiner.savepath + file.split('/')[-1] + combiner.suffix + '.fits'
+        exist = glob(out)
+        if (len(exist) == 0) | combiner.overwrite:
+            if combiner.verbose > 0:
+                print(f"Starting field {file.split('/')[-1].split('.stk')[0]}")
+            bands = ['r','i','z','y']
+            images = []
+            masks = []
+            for b in bands:
+                f = file + f'{b}.unconv.fits'
+                #if b == 'r':
+                ps1 = ps1_data(f,mask=combiner.use_mask,catalog=combiner.catalog_path+'ps1.csv',
+                               toflux=False,pad=combiner.pad)
+                #else:
+                #    ps1._load_image(f)
+                #    ps1._load_mask(f)
+
+                pad = pad_skycell(ps1=ps1,skycells=combiner.skycells,datapath=combiner.datapath)
+                sat = saturated_stars(deepcopy(pad.ps1))#,catalogpath=combiner.catalog_path)
+                images += [sat.ps1.padded]
+                masks += [sat.ps1.mask]
+                print(f'Done {ps1.band}')
+            combiner.ps1 = sat.ps1
+            images = np.array(images)
+            masks = np.array(masks,dtype=int)
+            image = np.nansum(images*combiner.combine[:,np.newaxis,np.newaxis],axis=0)
+            image = fftconvolve(image,combiner.psf,mode='same')
+            mask = masks[0]
+            for m in masks[1:]:
+                mask = mask | m
+            combiner.ps1.padded = image
+            combiner.ps1.mask = mask
+            combiner._update_header()
+            savename = file.split('/')[-1] + f'{combiner.suffix}'
+            combiner.ps1.save_image(combiner.savepath,savename,overwrite=combiner.overwrite)
+            print('Saved: ',savename)
+            savename = file.split('/')[-1] + f'{combiner.suffix}.mask'
+            combiner.ps1.save_mask(combiner.savepath,savename,overwrite=combiner.overwrite)
+    except Exception:
+        print(traceback.format_exc())
