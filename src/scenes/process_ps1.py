@@ -14,6 +14,7 @@ from correct_saturation import saturated_stars,mask_rad_func
 from correct_saturation_old import saturated_stars_old
 from pad_skycell import pad_skycell
 from ps1_data_handler import ps1_data
+from tools import _save_space
 
 from joblib import Parallel, delayed
 
@@ -33,6 +34,7 @@ class combine_ps1():
         self.skycells = skycells
         self.catalog_path = catalog_path
         self.savepath = savepath
+        self.check_savepath()
         self.suffix = suffix
         self.overwrite = overwrite
         self.pad = pad
@@ -49,6 +51,9 @@ class combine_ps1():
         self._make_psf()
         self.process()
         
+    def check_savepath(self):
+        _save_space(self.savepath)
+
     def _gather_ps1(self):
         files = np.array(glob(f'{self.datapath}/*.unconv.fits'))
         cell = np.array([f.split('.stk')[0] + '.stk.' for f in files])
@@ -84,6 +89,7 @@ class combine_ps1():
         for file in self.fields:
                 try:
                     out = self.savepath + file.split('/')[-1] + self.suffix + '.fits'
+                    print(self.savepath)
                     exist = glob(out)
                     if (len(exist) == 0) | self.overwrite:
                         if self.verbose > 0:
@@ -93,12 +99,8 @@ class combine_ps1():
                         masks = []
                         for b in bands:
                             f = file + f'{b}.unconv.fits'
-                            if b == 'r':
-                                ps1 = ps1_data(f,mask=self.use_mask,catalog=self.catalog_path+'_ps1.csv',
-                                               toflux=False,pad=self.pad)
-                            else:
-                                ps1._load_image(f)
-                                ps1._load_mask(f)
+                            ps1 = ps1_data(f,mask=self.use_mask,catalog=self.catalog_path+'_ps1.csv',
+                                           toflux=False,pad=self.pad)
 
                             pad = pad_skycell(ps1=ps1,skycells=self.skycells,datapath=self.datapath)
                             sat = saturated_stars(deepcopy(pad.ps1))#,catalogpath=self.catalog_path)
@@ -155,12 +157,10 @@ def _parallel_process(combiner,file):
             masks = []
             for b in bands:
                 f = file + f'{b}.unconv.fits'
-                #if b == 'r':
+                print(f)
                 ps1 = ps1_data(f,mask=combiner.use_mask,catalog=combiner.catalog_path+'ps1.csv',
                                toflux=False,pad=combiner.pad)
-                #else:
-                #    ps1._load_image(f)
-                #    ps1._load_mask(f)
+
 
                 pad = pad_skycell(ps1=ps1,skycells=combiner.skycells,datapath=combiner.datapath)
                 sat = saturated_stars(deepcopy(pad.ps1))#,catalogpath=combiner.catalog_path)
