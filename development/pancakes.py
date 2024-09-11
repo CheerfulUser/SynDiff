@@ -7,6 +7,7 @@ import astropy.units as u
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs import FITSFixedWarning
+from astropy.io.fits.verify import VerifyWarning
 
 import time
 from datetime import datetime
@@ -24,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
 import warnings # To ignore our problems
+warnings.simplefilter('ignore', category=VerifyWarning)
 warnings.filterwarnings('ignore', category=FITSFixedWarning)
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -39,13 +41,29 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 # warnings.showwarning = warn_with_traceback
 
 class Pancakes():
-    def __init__(self, file1, savepath = None, num_cores = None, sector = None, 
-                 use_multiple_cores_per_task = False, overwrite = True):
+    def __init__(self, file1, savepath = None, num_cores = 1, sector = None, 
+                 use_multiple_cores_per_task = False, overwrite = True, buffer = None, 
+                 priority = 'low'):
 
         self.file1 = file1
         self.use_multiple_cores_per_task = use_multiple_cores_per_task
         self.master_skip = False
         self.overwrite = overwrite
+        self.priority = priority
+
+        if isinstance(buffer, int):
+            self.buffer = buffer
+        elif buffer is None:
+            self.buffer = 0
+        else:
+            print('Buffer must be an integer. Setting to 0')
+            self.buffer = 0
+
+        if self.priority not in ['low', 'quality', 'high']:
+            print('Priority must be low, quality or high. Setting to low')
+            self.priority = 'low'
+
+        self.header_dicts = []
 
         if savepath is None:
             self.savepath = os.getcwd()
@@ -79,6 +97,31 @@ class Pancakes():
         self._index_master_file()
         self.name_skycells()
         self._skycelling()
+        self._dataframe_for_header()
+
+    def _dataframe_for_header(self):
+        dict_for_header = {}
+
+        self.date_mod =datetime.now().strftime('%Y-%m-%d')
+
+        cols = ['SECTOR', 'CAMERA', 'CCD', 'TELESCOP', 'INSTRUME']#, 'DATE-MOD', 'SOFTWARE', 'BSCALE', 'BZERO']
+        defaults = ['N/A', 1, 1, 'Not specified', 'Not specified']#, '','','1.0','32768.0']
+
+        for c in range(len(cols)):
+            col = cols[c]
+            try:
+                dict_for_header[col] = self.temp_copy[col]
+            except:
+                dict_for_header[col] = defaults[c]
+
+        dict_for_header['DATE-MOD'] = self.date_mod
+        dict_for_header['SOFTWARE'] = 'SynDiff'
+        dict_for_header['CREATOR'] = 'PanCAKES'
+        dict_for_header['SVERSION'] = 0.1
+        dict_for_header['BSCALE'] = 1.0
+        dict_for_header['BZERO'] = 32768.0
+
+        self.base_header = fits.Header(dict_for_header)
 
     def _index_master_file(self):
         full_date =datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%m')
@@ -124,6 +167,8 @@ class Pancakes():
         except:
             print('Fail')
             new_ccd = 1
+            self.temp_copy['CAMERA'] = new_ccd
+            self.temp_copy['CCD'] = new_ccd
 
         if self.sector != '':
             sector = str(self.sector).zfill(4)
@@ -137,7 +182,7 @@ class Pancakes():
         self.master_file = file_name_master
         self.master_index = file_name_index
 
-        if os.path.exists(os.path.join(self.savepath, file_name_master)):
+        if os.path.exists(os.path.join(self.savepath, file_name_master + '.gz')):
             if self.overwrite == False:
                 self.int_skip = True
                 print('Master file already exists. Will skip master file creation...')
@@ -179,36 +224,41 @@ class Pancakes():
 
         self.ra_centre, self.dec_centre = self.super_wcs.all_pix2world(self.data_shape[0]//2, self.data_shape[1]//2, 0)
 
-    def _ps1_image(self, skycell, wcs = False):
-        # temp_ind = self.skycell_df[self.skycell_df['Name'] == skycell].reset_index(drop=True).index[0]
-
-        # print(self.complete_skycells)
-
-        temp = self.skycell_df[self.skycell_df['Name'] == skycell].reset_index(drop=True)
+    def ps1_wcs_function(self, skycell):
         other_temp = self.skycell_wcs_df[self.skycell_wcs_df['NAME'] == skycell].reset_index(drop=True)
-        ra_corners = np.array([temp[f'RA_Corner{i}'] for i in range(1, 5)])
-        dec_corners = np.array([temp[f'DEC_Corner{i}'] for i in range(1, 5)])
 
         records = other_temp.to_dict(orient='records')
-
         header_dict = {k: v for d in records for k, v in d.items()}
 
-        self.min_ps1_ra = np.min(ra_corners)
-        self.max_ps1_ra = np.max(ra_corners)
-
-        self.min_ps1_dec = np.min(dec_corners)
-        self.max_ps1_dec = np.max(dec_corners)
-
-        self.ps1_poly = np.column_stack((ra_corners, dec_corners))
-
+        temp_head = fits.Header(header_dict)
         self.ps1_data_shape = (other_temp['NAXIS2'].iloc[0], other_temp['NAXIS1'].iloc[0])
 
-        if wcs == True:
-            ps1_wcs = WCS(fits.Header(header_dict))
-            return ps1_wcs
-        else:
-            temp_ind = self.complete_skycells[self.complete_skycells['Name'] == skycell].index[0]
-            self.ps1_wcs = self.ps1_wcs_master[temp_ind]
+        temp_wcs = WCS(temp_head)
+            
+        self.header_dicts.append(temp_head)
+        self.ps1_wcs_master.append(temp_wcs)
+
+    def _ps1_image(self, skycell):
+
+        other_temp = self.skycell_wcs_df[self.skycell_wcs_df['NAME'] == skycell].reset_index(drop=True)
+        self.ps1_data_shape = (other_temp['NAXIS2'].iloc[0], other_temp['NAXIS1'].iloc[0])
+            
+        temp_ind = self.complete_skycells[self.complete_skycells['Name'] == skycell].index[0]
+        self.ps1_wcs = self.ps1_wcs_master[temp_ind]
+
+        corns = np.array([[self.buffer, self.buffer], [self.ps1_data_shape[1] - self.buffer, self.buffer], 
+                        [self.ps1_data_shape[1] - self.buffer, self.ps1_data_shape[0] - self.buffer], 
+                        [self.buffer, self.ps1_data_shape[0] - self.buffer]])
+
+        ra_corners_ps1, dec_corners_ps1 = self.ps1_wcs.all_pix2world(corns[:, 0], corns[:, 1], 0)
+
+        self.min_ps1_ra = np.min(ra_corners_ps1)
+        self.max_ps1_ra = np.max(ra_corners_ps1)
+
+        self.min_ps1_dec = np.min(dec_corners_ps1)
+        self.max_ps1_dec = np.max(dec_corners_ps1)
+
+        self.ps1_poly = np.column_stack((ra_corners_ps1, dec_corners_ps1))
 
     def _ravelling(self):
         t_y, t_x = self.data_shape
@@ -230,7 +280,7 @@ class Pancakes():
         p_y, p_x = self.ps1_data_shape
 
         py, px = np.mgrid[:p_y, :p_x]
-
+        
         py_input = py.ravel()
         px_input = px.ravel()
 
@@ -283,7 +333,7 @@ class Pancakes():
                 self.enc_pix.append(tess_pix_moc)
         else:
             self.skip = True
-            print('Skipping:', self.skycell, self.skycell_index)
+            # print('Skipping:', self.skycell, self.skycell_index)
 
     def major_moccy(self):
 
@@ -366,7 +416,6 @@ class Pancakes():
 
     def _skycell_fitsify(self, fll):
         full_date =datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%m')
-        # date = datetime.now().strftime('%Y-%m-%d')
 
         new_fits_header = deepcopy(self.temp_copy)
         
@@ -401,6 +450,12 @@ class Pancakes():
 
         filtered_overlaps = {index: values for index, values in overlaps.items() if len(values) > 1}
 
+        if self.buffer:
+            buffer = self.buffer
+        else:
+            print('No buffer set. Setting to 120')
+            buffer = 120
+
         for index, values in tqdm(filtered_overlaps.items(), desc="Processing overlaps"):
             filtered_ind = ref_skycells.iloc[values].index.to_list()#reset_index(drop=True)
 
@@ -409,6 +464,7 @@ class Pancakes():
             _ra, _dec = self.super_wcs.all_pix2world(_x, _y, 0)
 
             minny = []
+            backup = []
 
             for i in range(len(filtered_ind)):
                 e = element[i]
@@ -416,14 +472,29 @@ class Pancakes():
                 _x1, _y1 = e.all_world2pix(_ra, _dec, 0)
                 t_df = ref_skycells.iloc[f_ind]
 
-                listy = [_x1, _y1, t_df['NAXIS2'] - _x1, t_df['NAXIS1'] - _y1]
+                listy = [_x1, _y1, t_df['NAXIS2'] - 1 - _x1, t_df['NAXIS1'] - 1 - _y1]
 
-                minny.append(np.nanmin(listy))
+                minny_val = np.nanmin(listy)
 
-            _minny_ind = np.nanargmax(minny)
-            best_skycell = filtered_ind[_minny_ind]
+                if minny_val >= buffer:
+                    minny.append([filtered_ind[i], minny_val])
+                backup.append([filtered_ind[i], minny_val])
+
+            minny = np.array(minny)
+            backup = np.array(backup)
+
+            if (len(minny) == 0) | (self.priority == 'quality'):
+                minny = backup
+                _minny_ind = np.argmax(minny[:, 1])
+                best_skycell = minny[_minny_ind][0]
+            elif self.priority == 'low':
+                best_skycell = np.nanmin(minny[:, 0]) # Adds a priority to the skycell
+            elif self.priority == 'high':
+                best_skycell = np.nanmax(minny[:, 0])
 
             fll[_y, _x] = best_skycell
+
+        fll[np.isnan(fll)] = -1
 
         return fll
 
@@ -468,6 +539,7 @@ class Pancakes():
             pass
     
     def _arrayifying(self, pix_output):
+
         fll = np.full((self.ps1_data_shape[0], self.ps1_data_shape[1], 2), np.nan)
 
         for i in range(len(pix_output)):
@@ -481,18 +553,17 @@ class Pancakes():
         
         return fll
 
-    def _fitsify(self, fll):
-        full_date =datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%m')
-        # date = datetime.now().strftime('%Y-%m-%d')
+    def _filename(self):
+        temp_fits_header = deepcopy(self.base_header)
 
-        new_fits_header = deepcopy(self.temp_copy)
-
-        new_fits_header['SKYCELL'] = self.skycell
-        new_fits_header['SKYCIND'] = self.skycell_index
+        temp_fits_header['SKYCELL'] = self.skycell
+        temp_fits_header['MAPIND'] = self.skycell_index
+        temp_fits_header['PROJCELL'] = int(self.skycell.split('.')[-2])
+        temp_fits_header['SKYCIND'] = int(self.skycell.split('.')[-1])
 
         try:
-            camera = new_fits_header['CAMERA']
-            ccd = new_fits_header['CCD']
+            camera = temp_fits_header['CAMERA']
+            ccd = temp_fits_header['CCD']
             new_ccd = int(int(ccd) + 4*(int(camera) - 1))
         except:
             print('Fail')
@@ -500,40 +571,93 @@ class Pancakes():
 
         if self.sector != '':
             sector = str(self.sector).zfill(4)
-            new_fits_header['SECTOR'] = sector
-            file_name = new_fits_header['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
+            temp_fits_header['SECTOR'] = sector
+            file_name = temp_fits_header['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
         else:
-            file_name = new_fits_header['TELESCOP'].strip() + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
+            file_name = temp_fits_header['TELESCOP'].strip() + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
+
+
+        return file_name, temp_fits_header
+
+    def _fitsify(self, fll):
+
+        file_name, temp_fits_header = self._filename()
+
+        new_fits_header = fits.Header()
+
+        new_fits_header['SIMPLE'] = 'T'
+
+        new_fits_header += self.header_dicts[self.skycell_index]
+        new_fits_header += temp_fits_header
         
-        new_fits_header['DATE-MOD'] = full_date
+        # new_fits_header.update(self.header_dicts[self.skycell_index])
 
         im1_header = deepcopy(new_fits_header)
-        im1_header['EXTNAME'] = 'X Pixels'
-        im1_header['XTENSION'] = 'X'
         im2_header = deepcopy(new_fits_header)
-        im2_header['EXTNAME'] = 'Y Pixels'
-        im2_header['XTENSION'] = 'Y'
+
+        fll[:,:,0][np.isnan(fll[:,:,0])] = -1
+        fll[:,:,1][np.isnan(fll[:,:,1])] = -1
+
+        new_fits_header = self._remove_naxis_cards(new_fits_header)
+        im1_header = self._reorder_header(im1_header)
+        im2_header = self._reorder_header(im2_header)
 
         file = os.path.join(self.savepath, file_name)
         primary_hdu = fits.PrimaryHDU(header=new_fits_header)
         image_hdu1 = fits.ImageHDU(data=deepcopy(np.int64(fll[:,:,0])), header=im1_header)
         image_hdu1.scale('int16', bscale=1.0,bzero=32768.0)
+        image_hdu1.header['EXTNAME'] = 'X'
+        image_hdu1.header['BSCALE'] = 1.0
+        image_hdu1.header['BZERO'] = 32768.0
         image_hdu2 = fits.ImageHDU(data=deepcopy(np.int64(fll[:,:,1])), header=im2_header)
         image_hdu2.scale('int16', bscale=1.0,bzero=32768.0)
+        image_hdu2.header['BSCALE'] = 1.0
+        image_hdu2.header['BZERO'] = 32768.0
+        image_hdu2.header['EXTNAME'] = 'Y'
+
         hdul = fits.HDUList([primary_hdu, image_hdu1, image_hdu2])
+        hdul.verify('fix')
 
         hdul.writeto(file, overwrite=True)
 
         compress = 'gzip -f ' + file
         os.system(compress)
-    
+
+    def _reorder_header(self, header):
+        # Create a new header list with correct order
+        new_header = fits.Header()
+        
+        # Example of required order
+        required_cards = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'PCOUNT', 'GCOUNT']
+        
+        # Add cards in the correct order
+        for card in required_cards:
+            if card in header:
+                new_header.append((card, header[card]))
+
+        # Add remaining cards that are not in the required order
+        for card in header:
+            if card not in required_cards:
+                new_header.append((card, header[card]))
+        
+        return new_header
+
+    def _remove_naxis_cards(self, header):
+        new_header = fits.Header() # Create a new header
+        
+        for card in header.cards: # Add cards that are not 'NAXIS' related
+            if not card[0].startswith('NAXIS'):
+                new_header.append(card)
+        
+        return new_header
+
     def syrup(self):
         if self.master_skip == True:
             print('Skipping pouring the syrup...')
         else:
             sky_list = self.skycells_list
             tasks = [(sky_list[i], i) for i in range(len(sky_list))]
-            # tasks = [('skycell.2246.021', 2)]
+            # tasks = [('skycell.2246.021', 2), ('skycell.2246.022', 3)]
 
             with Pool(processes=self.num_cores) as pool:
                 result = pool.imap_unordered(self._process_wrapper, tasks)
@@ -579,7 +703,7 @@ class Pancakes():
         self.ps1_wcs_master = []
 
         for i in tqdm(range(len(self.skycells_list)), desc='Getting all WCS'):
-            self.ps1_wcs_master.append(self._ps1_image(self.skycells_list[i], wcs=True))
+            self.ps1_wcs_function(self.skycells_list[i])
 
     def _skycelling(self):
 
@@ -592,12 +716,16 @@ class Pancakes():
         self.sc_names = [int(name.split('.')[1] + name.split('.')[2]) for name in sc_names] # WORK ON THIS
 
         for i in range(len(self.complete_skycells)):
-            corner1 = self.super_wcs.all_world2pix(self.complete_skycells.iloc[i]['RA_Corner1'], self.complete_skycells.iloc[i]['DEC_Corner1'], 0)
-            corner2 = self.super_wcs.all_world2pix(self.complete_skycells.iloc[i]['RA_Corner2'], self.complete_skycells.iloc[i]['DEC_Corner2'], 0)
-            corner3 = self.super_wcs.all_world2pix(self.complete_skycells.iloc[i]['RA_Corner3'], self.complete_skycells.iloc[i]['DEC_Corner3'], 0)
-            corner4 = self.super_wcs.all_world2pix(self.complete_skycells.iloc[i]['RA_Corner4'], self.complete_skycells.iloc[i]['DEC_Corner4'], 0)
+
+            ra_corners = np.array([self.complete_skycells.iloc[i][f'RA_Corner{j}'] for j in range(1, 5)])
+            dec_corners = np.array([self.complete_skycells.iloc[i][f'DEC_Corner{j}'] for j in range(1, 5)])
+
+            corner1 = self.super_wcs.all_world2pix(ra_corners[0], dec_corners[0], 0)
+            corner2 = self.super_wcs.all_world2pix(ra_corners[1], dec_corners[1], 0)
+            corner3 = self.super_wcs.all_world2pix(ra_corners[2], dec_corners[2], 0)
+            corner4 = self.super_wcs.all_world2pix(ra_corners[3], dec_corners[3], 0)
 
             sc_poly = self.super_wcs.all_pix2world([corner1, corner2, corner3, corner4], 0)
             im1_pixel_vertices.append(sc_poly)
-        
+
         self.im1_pixel_vertices = im1_pixel_vertices
