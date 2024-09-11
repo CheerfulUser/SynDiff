@@ -44,6 +44,9 @@ class Pancakes():
     def __init__(self, file1, savepath = None, num_cores = 1, sector = None, 
                  use_multiple_cores_per_task = False, overwrite = True, buffer = None, 
                  priority = 'low'):
+        """
+        Initializes the Pancakes class
+        """
 
         self.file1 = file1
         self.use_multiple_cores_per_task = use_multiple_cores_per_task
@@ -100,6 +103,10 @@ class Pancakes():
         self._dataframe_for_header()
 
     def _dataframe_for_header(self):
+        """
+        Creates a Header of telescope and software information
+        """
+
         dict_for_header = {}
 
         self.date_mod =datetime.now().strftime('%Y-%m-%d')
@@ -124,6 +131,10 @@ class Pancakes():
         self.base_header = fits.Header(dict_for_header)
 
     def _index_master_file(self):
+        """
+        Creates an index mapping to understand the ravelling of the TESS pixels to SkyCells
+        """
+
         full_date =datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%m')
 
         new_fits_header = deepcopy(self.temp_copy)
@@ -159,6 +170,9 @@ class Pancakes():
         os.system(compress)
 
     def _check_master_names(self):
+        """
+        Checking if the master file already exists to skip
+        """
         
         try:
             camera = self.temp_copy['CAMERA']
@@ -194,6 +208,10 @@ class Pancakes():
             print('Master file does not exist. Will create master file...')
 
     def butter(self, skycell, skycell_index):
+        """
+        Main SkyCell processing sub-routine function that gets called by the syrup function
+        """
+
         self.skip = False
         print('Processing:', skycell, skycell_index)
         self.skycell = skycell
@@ -211,6 +229,10 @@ class Pancakes():
             self.initialize_moc_pixel(tup)
 
     def _image1(self, im1_file):
+        """
+        Opens the TESS image and extracts the necessary information
+        """
+
         hdul = fits.open(im1_file)
         try:
             self.temp_copy = deepcopy(hdul[1].header)
@@ -225,6 +247,10 @@ class Pancakes():
         self.ra_centre, self.dec_centre = self.super_wcs.all_pix2world(self.data_shape[0]//2, self.data_shape[1]//2, 0)
 
     def ps1_wcs_function(self, skycell):
+        """
+        Grabs and stores the WCS information for the PanSTARRS1 images
+        """
+
         other_temp = self.skycell_wcs_df[self.skycell_wcs_df['NAME'] == skycell].reset_index(drop=True)
 
         records = other_temp.to_dict(orient='records')
@@ -239,6 +265,9 @@ class Pancakes():
         self.ps1_wcs_master.append(temp_wcs)
 
     def _ps1_image(self, skycell):
+        """
+        Grabs the PanSTARRS1 skycells information for extraction
+        """
 
         other_temp = self.skycell_wcs_df[self.skycell_wcs_df['NAME'] == skycell].reset_index(drop=True)
         self.ps1_data_shape = (other_temp['NAXIS2'].iloc[0], other_temp['NAXIS1'].iloc[0])
@@ -261,6 +290,10 @@ class Pancakes():
         self.ps1_poly = np.column_stack((ra_corners_ps1, dec_corners_ps1))
 
     def _ravelling(self):
+        """
+        Unravels the TESS image to get the pixel coordinates
+        """
+
         t_y, t_x = self.data_shape
         self._ty, self._tx = np.mgrid[:t_y, :t_x]
 
@@ -276,6 +309,9 @@ class Pancakes():
         self.ravelled_indices = np.array([(i, j) for i in range(self.data_shape[0]) for j in range(self.data_shape[1])])
 
     def _ps1_ravelling(self):
+        """
+        PanSTARRS1 image unravelling
+        """
 
         p_y, p_x = self.ps1_data_shape
 
@@ -291,6 +327,10 @@ class Pancakes():
         self._ra2, self._dec2 = self.ps1_wcs.all_pix2world(x2, y2, 0)
         
     def _pixel_vertices(self):
+        """
+        Grab the pixel vertices for the TESS image
+        """
+
         self.pixel_vertices = []
 
         _ra, _dec = self.super_wcs.all_pix2world(self.tpix_coord_input[:, 1], self.tpix_coord_input[:, 0], 0)
@@ -315,6 +355,10 @@ class Pancakes():
             self.pixel_vertices.append(t_poly)
 
     def moccy(self):
+        """
+        Grabbing enclosed PanSTARRS1 pixels
+        """
+
         ps1_skycoord = SkyCoord(self.ps1_poly, unit="deg", frame="icrs")
         ps1_moc = MOC.from_polygon_skycoord(ps1_skycoord, complement=False, max_depth=21)
 
@@ -336,6 +380,9 @@ class Pancakes():
             # print('Skipping:', self.skycell, self.skycell_index)
 
     def major_moccy(self):
+        """
+        TESS image pixels contained in the SkyCells
+        """
 
         im1_skycoord = SkyCoord(self.im1_poly, unit="deg", frame="icrs")
         self.im1_moc = MOC.from_polygon_skycoord(im1_skycoord, complement=False, max_depth=21)
@@ -354,6 +401,9 @@ class Pancakes():
         self.enc_sc = enc_sc
 
     def skycell_initialize_moc_pixel(self, pix_obj):
+        """
+        SkyCell pixel initialization sub-routine for matching TESS pixels to SkyCells
+        """
 
         pix_ras = self._ra_im1
         pix_decs = self._dec_im1
@@ -381,6 +431,10 @@ class Pancakes():
             return (skycell_ind, temp_ra, temp_dec, ps1_ind)
 
     def whipped_cream(self):
+        """
+        Main sub-routine for processing the TESS pixels to SkyCells
+        """
+
         if self.int_skip == True:
             print('Skipping whipping the cream...')
         elif self.master_skip == True:
@@ -403,6 +457,10 @@ class Pancakes():
             self._skycell_fitsify(fll)
 
     def hot_to_serve(self):
+        """
+        Main function to call to process the TESS pixels to SkyCells and SkyCells to PanSTARRS1 pixels
+        """
+
         if self.master_skip == False:
             if self.int_skip == True:
                 print('Syrup pouring...')
@@ -415,6 +473,10 @@ class Pancakes():
             print('No skycells found in the image')
 
     def _skycell_fitsify(self, fll):
+        """
+        Optimal SkyCell fits file creation
+        """
+
         full_date =datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%m')
 
         new_fits_header = deepcopy(self.temp_copy)
@@ -433,6 +495,10 @@ class Pancakes():
         os.system(compress)
 
     def _skycell_arrayify(self, pix_output):
+        """
+        Unravels the TESS pixels to SkyCells output, determines overlaps and puts them in an array
+        """
+
         fll = np.full(self.data_shape, np.nan)
         overlaps = {}  # Dictionary to store lists of values for each index
         ref_skycells = deepcopy(self.complete_skycells)
@@ -499,6 +565,10 @@ class Pancakes():
         return fll
 
     def initialize_moc_pixel(self, pix_obj):
+        """
+        Initializes the PanSTARRS1 pixels to TESS pixels matching
+        """
+
         pix_ras = self._ra2
         pix_decs = self._dec2
         poly = self.enc_pix_vertices
@@ -539,6 +609,9 @@ class Pancakes():
             pass
     
     def _arrayifying(self, pix_output):
+        """
+        Converts the PanSTARRS1 pixels to TESS pixels output to an array
+        """
 
         fll = np.full((self.ps1_data_shape[0], self.ps1_data_shape[1], 2), np.nan)
 
@@ -554,6 +627,10 @@ class Pancakes():
         return fll
 
     def _filename(self):
+        """
+        Determines filename for the skycell and a temporary header
+        """
+
         temp_fits_header = deepcopy(self.base_header)
 
         temp_fits_header['SKYCELL'] = self.skycell
@@ -580,6 +657,9 @@ class Pancakes():
         return file_name, temp_fits_header
 
     def _fitsify(self, fll):
+        """
+        Turns the PanSTARRS1 pixels to TESS pixels output into a fits file
+        """
 
         file_name, temp_fits_header = self._filename()
 
@@ -624,25 +704,29 @@ class Pancakes():
         os.system(compress)
 
     def _reorder_header(self, header):
-        # Create a new header list with correct order
-        new_header = fits.Header()
+        """
+        Reorders the header to the correct order
+        """
         
-        # Example of required order
-        required_cards = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'PCOUNT', 'GCOUNT']
+        new_header = fits.Header() # Create a new header list with correct order
         
-        # Add cards in the correct order
-        for card in required_cards:
+        required_cards = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'PCOUNT', 'GCOUNT'] # Example of required order
+        
+        for card in required_cards:  # Add cards in the correct order
             if card in header:
                 new_header.append((card, header[card]))
 
-        # Add remaining cards that are not in the required order
-        for card in header:
+        for card in header: # Add remaining cards that are not in the required order
             if card not in required_cards:
                 new_header.append((card, header[card]))
         
         return new_header
 
     def _remove_naxis_cards(self, header):
+        """
+        Removes NAXIS related cards from the header
+        """
+
         new_header = fits.Header() # Create a new header
         
         for card in header.cards: # Add cards that are not 'NAXIS' related
@@ -652,6 +736,10 @@ class Pancakes():
         return new_header
 
     def syrup(self):
+        """
+        Main function to match PanSTARRS1 pixels to TESS pixels
+        """
+
         if self.master_skip == True:
             print('Skipping pouring the syrup...')
         else:
@@ -665,18 +753,33 @@ class Pancakes():
                     pass
 
     def _process_wrapper(self, args):
+        """
+        Wrapper function for the syrup function
+        """
+
         filename,index = args
         self.butter(filename, index)
 
     def angular_distance(self, ra1, dec1, ra2, dec2):
+        """
+        Angular distance between two points on the sky
+        """
+
         d1 = np.sin(np.radians(dec1)) * np.sin(np.radians(dec2))
         d2 = np.cos(np.radians(dec1)) * np.cos(np.radians(dec2)) * np.cos(np.radians(ra1 - ra2))
         return np.degrees(np.arccos(d1 + d2))
 
     def max_radius(self, ra1, dec1, ra2, dec2):
+        """
+        Maximum angular distance between two points on the sky
+        """
+
         return np.nanmax(self.angular_distance(ra1, dec1, ra2, dec2))
 
     def name_skycells(self):
+        """
+        Name and find appropriate skycells for the TESS image
+        """
 
         ra_corners = self.im1_poly[:, 0]
         dec_corners = self.im1_poly[:, 1]
@@ -706,6 +809,9 @@ class Pancakes():
             self.ps1_wcs_function(self.skycells_list[i])
 
     def _skycelling(self):
+        """
+        Finds the pixel vertices of the PanSTARRS1 skycells
+        """
 
         im1_pixel_vertices = []
 
