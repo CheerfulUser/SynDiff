@@ -209,7 +209,7 @@ class Pancakes():
 
     def butter(self, skycell, skycell_index):
         """
-        Main SkyCell processing sub-routine function that gets called by the syrup function
+        Main SkyCell processing sub-routine function that gets called by the ps1_pixels_to_im1 function
         """
 
         self.skip = False
@@ -433,17 +433,17 @@ class Pancakes():
         if len(temp_ra) != 0:
             return (skycell_ind, temp_ra, temp_dec, ps1_ind)
 
-    def whipped_cream(self):
+    def im1_to_skycells(self):
         """
         Main sub-routine for processing the TESS pixels to SkyCells
         """
 
         if self.int_skip == True:
-            print('Skipping whipping the cream...')
+            print('Skipping...')
         elif self.master_skip == True:
-            print('Skipping whipping the cream...')
+            print('Skipping...')
         else:
-            print('Whipping cream...')
+            print('Starting...')
             self.major_moccy()
             sc_payload = [(i,etp, self.skycells_id[i]) for (i,etp) in enumerate(self.enc_sc)]
 
@@ -459,19 +459,19 @@ class Pancakes():
             # return fll
             self._skycell_fitsify(fll)
 
-    def hot_to_serve(self):
+    def complete_mapping(self):
         """
         Main function to call to process the TESS pixels to SkyCells and SkyCells to PanSTARRS1 pixels
         """
 
         if self.master_skip == False:
             if self.int_skip == True:
-                print('Syrup pouring...')
-                self.syrup()
+                print('Starting...')
+                self.ps1_pixels_to_im1()
             else:
-                self.whipped_cream()
-                print('Syrup pouring...')
-                self.syrup()
+                self.im1_to_skycells()
+                print('Starting...')
+                self.ps1_pixels_to_im1()
         else:
             print('No skycells found in the image')
 
@@ -748,13 +748,13 @@ class Pancakes():
         
         return new_header
 
-    def syrup(self):
+    def ps1_pixels_to_im1(self):
         """
         Main function to match PanSTARRS1 pixels to TESS pixels
         """
 
         if self.master_skip == True:
-            print('Skipping pouring the syrup...')
+            print('Skipping...')
         else:
             sky_list = self.skycells_list
             tasks = [(sky_list[i], i) for i in range(len(sky_list))]
@@ -767,7 +767,7 @@ class Pancakes():
 
     def _process_wrapper(self, args):
         """
-        Wrapper function for the syrup function
+        Wrapper function for the ps1_pixels_to_im1 function
         """
 
         filename,index = args
