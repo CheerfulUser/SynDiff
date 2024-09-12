@@ -4,11 +4,30 @@ from scipy.optimize import minimize
 from copy import deepcopy
 from glob import glob
 import os
-
+import mastcasjobs
 from astropy.coordinates import SkyCoord, Angle
 import astropy.units as u
 from astroquery.vizier import Vizier
 Vizier.ROW_LIMIT = -1
+
+
+
+def _check_exists(path,overwrite=False):
+    exists = (len(glob(path)) == 0) | overwrite
+    return exists
+
+def _save_space(Save,delete=False):
+    """
+    Creates a path if it doesn't already exist.
+    """
+    try:
+        os.makedirs(Save)
+    except FileExistsError:
+        if delete:
+            os.system(f'rm -r {Save}/')
+            os.makedirs(Save)
+        else:
+            pass
 
 def catmag_to_imscale(flux,header):
     a = 2.5/np.log(10)
@@ -134,7 +153,44 @@ def _get_bsc(skycoord,rad):
         except:
             result = None
     return result
-    
+
+
+def _ps1_casjobs(coord,radius,maglim=20):
+    query = f"""
+            SELECT o.objID,
+            o.raMean, o.decMean,
+            o.qualityFlag,
+            o.gMeanPSFMag, o.gMeanPSFMagErr, o.gMeanPSFMagNpt,
+            o.rMeanPSFMag, o.rMeanPSFMagErr, o.rMeanPSFMagNpt,
+            o.iMeanPSFMag, o.iMeanPSFMagErr, o.iMeanPSFMagNpt,
+            o.zMeanPSFMag, o.zMeanPSFMagErr, o.zMeanPSFMagNpt,
+            o.yMeanPSFMag, o.yMeanPSFMagErr, o.yMeanPSFMagNpt,
+            o.rMeanKronMag, o.rMeanKronMagErr,
+            o.iMeanKronMag, o.iMeanKronMagErr,
+            o.nDetections,
+            o.gFlags, o.gQfPerfect,
+            o.rFlags, o.rQfPerfect,
+            o.iFlags, o.iQfPerfect,
+            o.zFlags, o.zQfPerfect,
+            o.yFlags, o.yQfPerfect
+            INTO mydb.[syndiff_test_field2]
+            from fGetNearbyObjEq({coord.ra.deg}, {coord.dec.deg}, {radius}*60) as x
+            JOIN MeanObjectView o on o.ObjID=x.ObjId
+            LEFT JOIN StackObjectAttributes AS soa ON soa.objID = x.objID
+            WHERE o.nDetections>5
+            AND soa.primaryDetection>0
+            AND o.iMeanPSFMag < 20
+            """
+    try:
+        jobs = mastcasjobs.MastCasJobs(context="PanSTARRS_DR2")
+        results = jobs.submit(query, task_name="SynDiff field cat",estimate=70)
+        results = results.to_pandas()
+    except:
+        results = None
+    return results
+
+
+
 def find_unique2ps1(ps1_cat, viz_cat):
     radius_threshold = 2*u.arcsec
     
@@ -169,8 +225,6 @@ def combine_close_sources(cat,distance=100):
     cat['mag'] = mn
     return cat
 
-
-import mastcasjobs
 
 def search_refcat(ra, dec, search_size):
     query = """select n.distance as dstDegrees, r.*

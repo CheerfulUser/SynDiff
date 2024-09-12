@@ -4,6 +4,7 @@ from astropy.wcs import WCS
 from astropy.stats import sigma_clipped_stats
 from tools import query_ps1, download_skycells
 import pandas as pd
+from copy import deepcopy
 
 class ps1_data():
     def __init__(self,file,mask=False,catalog=None,toflux=True,pad=0):
@@ -19,16 +20,15 @@ class ps1_data():
             self.data = self.convert_flux_scale()
     
     def _load_image(self,file=None):
-        if file is None:
-            file = self.file
-        hdul = fits.open(file)
+        print('')
+        hdul = fits.open(self.file)
         if len(hdul) == 1:
             j = 0 
         else:
             j = 1
-        self._bzero = hdul[j].header['BZERO']
-        self._bscale = hdul[j].header['BSCALE']
-        self.data = hdul[j].data
+        self._bzero = deepcopy(hdul[j].header['BZERO'])
+        self._bscale = deepcopy(hdul[j].header['BSCALE'])
+        self.data = deepcopy(hdul[j].data)
         self.header = hdul[j].header
         self.wcs = WCS(hdul[j].header)
 
@@ -50,8 +50,8 @@ class ps1_data():
                 j = 0 
             else:
                 j = 1
-            self._bscale_mask = hdul[j].header['BSCALE']
-            self._bzero_mask = hdul[j].header['BZERO']
+            #self._bscale_mask = deepcopy(hdul[j].header['BSCALE'])
+            #self._bzero_mask = deepcopy(hdul[j].header['BZERO'])
             self.mask = np.pad(hdul[j].data,self.pad)
             self.mask_header = hdul[j].header
             self.mask_file = mask_file
@@ -69,16 +69,18 @@ class ps1_data():
         if toflux:
             if self.ftype == 'log':
                 self.ftype = 'flux'
+
                 x = self.data/a
                 flux = self.header['boffset'] + self.header['bsoften'] * 2 * np.sinh(x)
                 self.data = flux 
-                data = self.padded
-                x = data/a
+
+                x = self.padded/a
                 flux = self.header['boffset'] + self.header['bsoften'] * 2 * np.sinh(x)
                 self.padded = flux 
         else:
             if self.ftype == 'flux':
                 self.ftype = 'log'
+
                 tmp = (self.data - self.header['boffset']) / (self.header['bsoften']*2)
                 log = np.arcsinh(tmp)*a
                 self.data = log
