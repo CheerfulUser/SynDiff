@@ -50,8 +50,8 @@ class ps1_data():
                 j = 0 
             else:
                 j = 1
-            self._bscale_mask = deepcopy(hdul[j].header['BSCALE'])
-            self._bzero_mask = deepcopy(hdul[j].header['BZERO'])
+            #self._bscale_mask = deepcopy(hdul[j].header['BSCALE'])
+            #self._bzero_mask = deepcopy(hdul[j].header['BZERO'])
             self.mask = np.pad(hdul[j].data,self.pad)
             self.mask_header = hdul[j].header
             self.mask_file = mask_file
