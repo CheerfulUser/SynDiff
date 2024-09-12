@@ -216,17 +216,20 @@ class Pancakes():
         print('Processing:', skycell, skycell_index)
         self.skycell = skycell
         self.skycell_index = skycell_index
-        self._ps1_image(skycell)
-        self._pixel_vertices()
-        self._ps1_ravelling()
-        self.moccy()
-        if self.skip == False:
-            pix_obj_ind = np.arange(len(self.enc_pix))
-            pix_obj_etp = deepcopy(self.enc_pix)
-            pix_obj_pix = deepcopy(self.enc_pix_indices[pix_obj_ind])
+        self._filename()
 
-            tup = (pix_obj_ind, pix_obj_etp, pix_obj_pix)
-            self.initialize_moc_pixel(tup)
+        if self.skip == False:
+            self._ps1_image(skycell)
+            self._pixel_vertices()
+            self._ps1_ravelling()
+            self.moccy()
+            if self.skip == False:
+                pix_obj_ind = np.arange(len(self.enc_pix))
+                pix_obj_etp = deepcopy(self.enc_pix)
+                pix_obj_pix = deepcopy(self.enc_pix_indices[pix_obj_ind])
+
+                tup = (pix_obj_ind, pix_obj_etp, pix_obj_pix)
+                self.initialize_moc_pixel(tup)
 
     def _image1(self, im1_file):
         """
@@ -649,19 +652,29 @@ class Pancakes():
         if self.sector != '':
             sector = str(self.sector).zfill(4)
             temp_fits_header['SECTOR'] = sector
-            file_name = temp_fits_header['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
+            file_name = temp_fits_header['TELESCOP'].strip() + '_' + 's'+sector + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '.fits'
         else:
-            file_name = temp_fits_header['TELESCOP'].strip() + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '_.fits'
+            file_name = temp_fits_header['TELESCOP'].strip() + '_' + str(new_ccd) + '_' + self.skycell + '_' + str(self.skycell_index).zfill(5) + '.fits'
 
+        if os.path.exists(os.path.join(self.savepath, file_name + '.gz')):
+            if self.overwrite == False:
+                self.skip = True
+            else:
+                self.skip = False
+        else:
+            self.int_skip = False
 
-        return file_name, temp_fits_header
+        self.file_name = file_name
+        self.temp_fits_header = temp_fits_header
 
     def _fitsify(self, fll):
         """
         Turns the PanSTARRS1 pixels to TESS pixels output into a fits file
         """
 
-        file_name, temp_fits_header = self._filename()
+        file_name = self.file_name
+        
+        temp_fits_header = self.temp_fits_header
 
         new_fits_header = fits.Header()
 
