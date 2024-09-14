@@ -12,7 +12,7 @@ from shutil import rmtree
 from setuptools import find_packages, setup, Command
 
 # Package meta-data.
-NAME = 'SynDiff'
+NAME = 'syndiff'
 DESCRIPTION = 'Forward model difference imaging with PS1.'
 URL = 'https://github.com/CheerfulUser/SynDiff'
 EMAIL = 'ryan.ridden@canterbury.ac.nz'

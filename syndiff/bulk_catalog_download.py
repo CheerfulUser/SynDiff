@@ -1,7 +1,7 @@
 import numpy as np
 
 import pandas as pd 
-from tools import _get_tyco, _get_gaia, _ps1_casjobs, _save_space, _check_exists
+from .tools import _get_tyco, _get_gaia, _ps1_casjobs, _save_space, _check_exists
 from astropy.coordinates import SkyCoord, Angle
 
 

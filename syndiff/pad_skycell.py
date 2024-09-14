@@ -15,8 +15,8 @@ import os
 
 from copy import deepcopy
 
-from ps1_data_handler import ps1_data
-from tools import download_skycells, catmag_to_imscale
+from .ps1_data_handler import ps1_data
+from .tools import download_skycells, catmag_to_imscale
 
 
 class pad_skycell():

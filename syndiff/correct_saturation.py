@@ -17,8 +17,8 @@ from photutils.aperture import ApertureStats, aperture_photometry
 from astroquery.vizier import Vizier
 Vizier.ROW_LIMIT = -1
 
-from tools import * #ps_psf, psf_minimizer, psf_phot, mask_rad_func
-from tools import _get_gaia, _get_bsc
+from .tools import * #ps_psf, psf_minimizer, psf_phot, mask_rad_func
+from .tools import _get_gaia, _get_bsc
 from timeit import default_timer as timer
 
 

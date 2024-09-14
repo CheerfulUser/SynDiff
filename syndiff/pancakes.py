@@ -24,6 +24,9 @@ from billiard.pool import Pool
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 
+import os
+package_directory = os.path.dirname(os.path.abspath(__file__))
+
 import warnings # To ignore our problems
 warnings.simplefilter('ignore', category=VerifyWarning)
 warnings.filterwarnings('ignore', category=FITSFixedWarning)
@@ -83,10 +86,10 @@ class Pancakes():
 
         self.skycells_final = []
 
-        skycell_csv = './skycell_coordinates.csv'
+        skycell_csv = f'{package_directory}/data/skycell_coordinates.csv'
         self.skycell_df = pd.read_csv(skycell_csv)
 
-        skycell_wcs_csv = './SkyCells/skycell_wcs.csv'
+        skycell_wcs_csv = f'{package_directory}/data/skycell_wcs.csv'
         self.skycell_wcs_df = pd.read_csv(skycell_wcs_csv)
 
         if num_cores is None:

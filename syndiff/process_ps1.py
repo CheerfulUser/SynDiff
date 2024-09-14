@@ -10,11 +10,10 @@ from datetime import date
 import traceback
 
 
-from correct_saturation import saturated_stars,mask_rad_func
-from correct_saturation_old import saturated_stars_old
-from pad_skycell import pad_skycell
-from ps1_data_handler import ps1_data
-from tools import _save_space
+from .correct_saturation import saturated_stars,mask_rad_func
+from .pad_skycell import pad_skycell
+from .ps1_data_handler import ps1_data
+from .tools import _save_space
 
 from joblib import Parallel, delayed
 

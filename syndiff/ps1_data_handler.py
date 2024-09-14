@@ -2,7 +2,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.stats import sigma_clipped_stats
-from tools import query_ps1, download_skycells
+from .tools import query_ps1, download_skycells
 import pandas as pd
 from copy import deepcopy
 
