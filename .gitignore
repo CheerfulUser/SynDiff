@@ -58,4 +58,8 @@ Thumbs.db
 
 # Folders
 development/data/
+syndiff.egg-info
 src/scenes/dave
+development/bulk_download/catalogs
+build
+src/scenes/wget-log
