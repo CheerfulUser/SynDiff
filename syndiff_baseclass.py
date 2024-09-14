@@ -303,7 +303,10 @@ class syndiff_baseclass:
         else:
             logfilename += '.log.txt'
         return(logfilename)
-        
+    
+    def get_TESS2skycell_filename(self):
+        filename = f'{self.prepdir}/sec{self.params["sector"]:03d}_ccd{self.params["ccd"]:02d}.tess2skycell.fits'
+        return(filename)
         
 
 if __name__ == '__main__':

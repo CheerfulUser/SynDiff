@@ -11,7 +11,7 @@ from pdastro import AnotB,pdastroclass
 from syndiff_baseclass import syndiff_baseclass,executecommand,makepath4file
 import pandas as pd
 
-allowed_steps = ['setTESSref','combinePS1']
+allowed_steps = ['tess2skycell','setTESSref','combinePS1']
 
 
 class prep_sectorclass(syndiff_baseclass):
@@ -24,6 +24,7 @@ class prep_sectorclass(syndiff_baseclass):
        # assign for each step the function to execute
        self.stepcmds['setTESSref']=self.execute_setTESSref
        self.stepcmds['combinePS1']=self.execute_combinePS1
+       self.stepcmds['tess2skycell']=self.execute_tess2skycell
 
     def define_arguments(self,parser=None,usage=None,conflict_handler='resolve'):
         if parser is None:
@@ -47,17 +48,13 @@ class prep_sectorclass(syndiff_baseclass):
         
         return(group)
 
-    def optional_arguments_setTESSref_old(self,parser):
-        parser.add_argument('--setTESSref_test1',default=4,help="test optional params 1 ")
-        parser.add_argument('--setTESSref_test2',default=None,help="")
+    def optional_arguments_tess2skycell(self,parser):
+        group = parser.add_argument_group('tess2skycell')
 
-        return(parser)
-
-    def optional_arguments_combinePS1_old(self,parser):
-        parser.add_argument('--combinePS1_test1',default=4,help="test optional params 1 ")
-        parser.add_argument('--combinePS1_test2',default="hello",help="whatever")
-
-        return(parser)
+        group.add_argument('--tess2skycell_test1')
+        group.add_argument('--tess2skycell_test2')
+        
+        return(group)
 
     def define_optional_arguments(self,parser=None,usage=None,conflict_handler='resolve'):
         parser = syndiff_baseclass.define_optional_arguments(self,parser=parser,usage=usage,conflict_handler=conflict_handler)
@@ -71,6 +68,7 @@ class prep_sectorclass(syndiff_baseclass):
 
         group_setTESSref = self.optional_arguments_setTESSref(parser)
         group_combinePS1 = self.optional_arguments_combinePS1(parser)
+        group_tess2skycell = self.optional_arguments_tess2skycell(parser)
 
         return(parser)
     
@@ -172,6 +170,14 @@ class prep_sectorclass(syndiff_baseclass):
         
         return(errorflag)   
         
+    def execute_tess2skycell(self,step):
+        # construct the command
+        cmd = 'tess2skycell.py'
+        cmd += f' {self.params["sector"]} {self.params["ccd"]} {self.get_TESS2skycell_filename()}'
+        
+        errorflag = self.execute_step(step,cmd)
+        
+        return(errorflag)   
     #def execute_cmds(self,steps=None):
     #    print('HELLO')
             
