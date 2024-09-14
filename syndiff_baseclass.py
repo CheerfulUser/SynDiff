@@ -33,7 +33,7 @@ def executecommand(cmd,execution_finished_word=None,cmd_logfilename=None,
                    overwrite=True,raiseRuntimeError=False,verbose=1):
 
     execution_start_date = Time(datetime.now())
-    startlines=[f'\n################## {execution_start_date}',
+    startlines=[f'\n################## {execution_start_date.to_value("fits")}',
                 f'###### executing:\n{cmd}',
                 '##################\n']
     
@@ -65,7 +65,7 @@ def executecommand(cmd,execution_finished_word=None,cmd_logfilename=None,
     
     # result strings: Error or finished?
     delta_time = execution_end_date - execution_start_date
-    endlines = [f'\n!!!!!!!!!!!!!!!!!!! {delta_time.sec/60.0:.3f} min execution time: {execution_start_date} to {execution_end_date}']
+    endlines = [f'\n!!!!!!!!!!!!!!!!!!! {delta_time.sec/60.0:.3f} min execution time: {execution_start_date.to_value("fits")} to {execution_end_date.to_value("fits")}']
     if errorflag:
         endlines.append( f'!!! ERROR executing {cmd}')
     else:
