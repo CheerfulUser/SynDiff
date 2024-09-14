@@ -162,10 +162,15 @@ class prep_sectorclass(syndiff_baseclass):
         
         return(errorflag)   
         
-    
-        
     def execute_combinePS1(self,step):
-        print('HELLO combinePS1')
+        # construct the command
+        cmd = 'combinePS1.py'
+        if self.params['combinePS1_test1'] is not None:
+            cmd += f' --test1 {self.params["combinePS1_test1"]}'
+       
+        errorflag = self.execute_step(step,cmd)
+        
+        return(errorflag)   
         
     #def execute_cmds(self,steps=None):
     #    print('HELLO')
