@@ -41,7 +41,7 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 # warnings.showwarning = warn_with_traceback
 
 class Pancakes():
-    def __init__(self, file1, savepath = None, num_cores = 1, sector = None, 
+    def __init__(self, file1, savepath = None, num_cores = 1, sector = None, ccd = None,
                  use_multiple_cores_per_task = False, overwrite = True, buffer = None, 
                  priority = 'low'):
         """
@@ -80,6 +80,15 @@ class Pancakes():
             print(f"Sector: {sector}")
         else:
             print('Sector must be an integer. Making None')
+
+        if ccd is None:
+            self.ccd = 1
+        elif isinstance(sector, int):
+            self.ccd = ccd
+            print(f"CCD: {ccd}")
+        else:
+            print('CCD must be an integer. Making 1')
+            self.ccd = 1
 
         self.skycells_final = []
 
@@ -247,7 +256,7 @@ class Pancakes():
         self.im1_poly = self.super_wcs.calc_footprint()
         hdul.close()
 
-        self.ra_centre, self.dec_centre = self.super_wcs.all_pix2world(self.data_shape[0]//2, self.data_shape[1]//2, 0)
+        self.ra_centre, self.dec_centre = self.super_wcs.all_pix2world(self.data_shape[1]/2, self.data_shape[0]/2, 0)
 
     def ps1_wcs_function(self, skycell):
         """
@@ -831,8 +840,8 @@ class Pancakes():
         sc_center_ra, sc_center_dec = self.complete_skycells.RA.values, self.complete_skycells.DEC.values
 
         self.sc_centers = np.column_stack((sc_center_ra, sc_center_dec))
-        sc_names = self.complete_skycells['Name'].values # WORK ON THIS
-        self.sc_names = [int(name.split('.')[1] + name.split('.')[2]) for name in sc_names] # WORK ON THIS
+        sc_names = self.complete_skycells['Name'].values 
+        self.sc_names = [int(name.split('.')[1] + name.split('.')[2]) for name in sc_names]
 
         for i in range(len(self.complete_skycells)):
 
