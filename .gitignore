@@ -21,7 +21,7 @@
 *.tar
 *.zip
 *.fz
-#*.csv
+*.csv
 
 # Logs and databases #
 ######################
@@ -50,9 +50,6 @@ Thumbs.db
 *.mp4
 *.fits
 
-# Exception for PS1 to TESS notebook. Feel free to remove...
-!tess2019359002923-s0020-1-1-0165-s_ffic.fits
-
 # Checkpoints #
 .ipynb_checkpoints/
 
@@ -63,3 +60,7 @@ src/scenes/dave
 development/bulk_download/catalogs
 build
 src/scenes/wget-log
+src/scenes/Sector20_ccd11*_bsc.csv
+src/scenes/Sector20_ccd11*_gaia.csv
+src/scenes/Sector20_ccd11*_ps1.csv
+.gitignore
