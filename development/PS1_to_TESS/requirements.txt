@@ -32,7 +32,7 @@ python-dateutil==2.9.0.post0
 PyYAML @ file:///home/conda/feedstock_root/build_artifacts/pyyaml_1723018220704/work
 reproject==0.14.0
 scipy @ file:///home/conda/feedstock_root/build_artifacts/scipy-split_1724327061663/work/dist/scipy-1.14.1-cp312-cp312-linux_x86_64.whl#sha256=273d4a0dca8845537bb3b7a02f60b5c84296e444f352aff32292ded3941d0b0f
-setuptools==72.1.0
+setuptools==78.1.1
 six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
 toolz==0.12.1
 wheel==0.43.0
