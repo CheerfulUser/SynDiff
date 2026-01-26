@@ -35,6 +35,6 @@ scipy @ file:///home/conda/feedstock_root/build_artifacts/scipy-split_1724327061
 setuptools==78.1.1
 six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
 toolz==0.12.1
-wheel==0.43.0
+wheel==0.46.2
 zarr==2.18.2
 zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1723591248676/work
